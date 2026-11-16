@@ -36,6 +36,7 @@ extern "C" {
     fn fl_on_key(f: *mut FlWindow, cb: extern "C" fn(c_int, u32, *mut c_void), ud: *mut c_void);
     fn fl_on_mouse(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
     fn fl_on_resize(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
+    fn fl_on_tick(f: *mut FlWindow, cb: extern "C" fn(*mut c_void), ud: *mut c_void, ms: c_int);
     fn fl_run(f: *mut FlWindow);
     fn execv(path: *const c_char, argv: *const *const c_char) -> c_int;
 }
@@ -75,6 +76,10 @@ extern "C" fn on_key(keycode: c_int, mod_bits: u32, _ud: *mut c_void) {
 
 extern "C" fn on_mouse(x: c_int, y: c_int, _ud: *mut c_void) {
     dispatch(Event::MouseDown { x, y });
+}
+
+extern "C" fn on_tick(_ud: *mut c_void) {
+    dispatch(Event::Tick);
 }
 
 fn log(msg: &str) {
@@ -136,6 +141,7 @@ fn main() {
         fl_on_key(win, on_key, ptr::null_mut());
         fl_on_mouse(win, on_mouse, ptr::null_mut());
         fl_on_resize(win, on_resize, ptr::null_mut());
+        fl_on_tick(win, on_tick, ptr::null_mut(), 250);
         fl_flush(win);
         fl_run(win);
         fl_close(win);

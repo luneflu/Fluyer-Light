@@ -10,6 +10,7 @@ extern "C" {
     fn au_playing() -> c_int;
     fn au_pos() -> c_double;
     fn au_len() -> c_double;
+    fn au_seek(seconds: c_double) -> c_int;
     fn au_set_volume(v: c_float);
     fn au_quit();
 }
@@ -27,6 +28,10 @@ pub fn play(path: &str) -> bool {
 
 pub fn toggle() {
     unsafe { au_toggle() };
+}
+
+pub fn seek(seconds: f64) -> bool {
+    unsafe { au_seek(seconds) != 0 }
 }
 
 pub fn is_playing() -> bool {

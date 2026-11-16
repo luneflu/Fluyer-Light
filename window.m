@@ -36,6 +36,9 @@ struct fl_window {
   fl_key_cb key;
   fl_mouse_cb mouse;
   fl_resize_cb resize;
+  fl_tick_cb tick;
+  void *tick_ud;
+  void *timer;   // __bridge NSTimer
   void *view;   // __bridge FLView, for layout during resize
   int pend_w, pend_h, scheduled;
   IOSurfaceRef pending;
@@ -236,5 +239,32 @@ void *fl_resize_ensure(fl_window *f, int w, int h, int *stride) {
 void fl_on_key(fl_window *f, fl_key_cb cb, void *ud) { f->key = cb; f->key_ud = ud; }
 void fl_on_mouse(fl_window *f, fl_mouse_cb cb, void *ud) { f->mouse = cb; f->mouse_ud = ud; }
 void fl_on_resize(fl_window *f, fl_resize_cb cb, void *ud) { f->resize = cb; f->resize_ud = ud; }
+
+@interface FLTickTarget : NSObject
+@property(nonatomic, assign) struct fl_window *owner;
+@end
+
+@implementation FLTickTarget
+- (void)fire:(NSTimer *)t {
+  struct fl_window *f = self.owner;
+  if (f && f->tick) f->tick(f->tick_ud);
+}
+@end
+
+void fl_on_tick(fl_window *f, fl_tick_cb cb, void *ud, int ms) {
+  if (!f) return;
+  f->tick = cb;
+  f->tick_ud = ud;
+  if (f->timer) [(__bridge NSTimer *)f->timer invalidate];
+  FLTickTarget *t = [FLTickTarget new];
+  t.owner = f;
+  NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:(ms / 1000.0)
+                                                   target:t
+                                                 selector:@selector(fire:)
+                                                 userInfo:nil
+                                                  repeats:YES];
+  [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+  f->timer = (__bridge_retained void *)timer;
+}
 
 void fl_run(fl_window *f) { [NSApp run]; }

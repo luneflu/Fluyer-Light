@@ -15,16 +15,24 @@ pub struct Button {
     pub border: u8,
     pub border_w: i32,
     pub fg: u8,
+    pub fixed_w: i32, // > 0: ignore text-derived size (square icon buttons)
+    pub fixed_h: i32,
 }
 
 impl Button {
     /// Text width + horizontal padding. Never stored: resize/relabel free.
     pub fn w(&self) -> i32 {
+        if self.fixed_w > 0 {
+            return self.fixed_w;
+        }
         font::text_width(self.label, self.scale) + 2 * self.pad_x
     }
 
     /// Line height + vertical padding.
     pub fn h(&self) -> i32 {
+        if self.fixed_h > 0 {
+            return self.fixed_h;
+        }
         font::LINE_HEIGHT * self.scale + 2 * self.pad_y
     }
 
@@ -86,6 +94,7 @@ pub struct List {
     pub sel_fg: u8,
     pub selected: Option<usize>,
     pub scroll: usize, // first visible row
+    pub view_h: i32,   // rows are clipped below this y (0 = whole canvas)
 }
 
 impl List {
@@ -99,7 +108,8 @@ impl List {
 
     /// Rows that fit between `y` and the canvas bottom.
     pub fn visible(&self, ch: i32) -> usize {
-        ((ch - self.y).max(0) / self.stride()) as usize
+        let bottom = if self.view_h > 0 { self.y + self.view_h } else { ch };
+        ((bottom - self.y).max(0) / self.stride()) as usize
     }
 
     /// Scroll the least amount that keeps row `i` on screen.
@@ -164,7 +174,7 @@ impl List {
         for i in self.scroll..self.items.len() {
             let item = &self.items[i];
             let r = self.row(i, cw);
-            if r.y >= c.h() {
+            if r.y >= c.h() || (self.view_h > 0 && r.y + r.h > self.y + self.view_h) {
                 break;
             }
             let sel = self.selected == Some(i);

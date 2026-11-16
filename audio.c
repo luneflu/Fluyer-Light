@@ -153,6 +153,12 @@ double au_len(void) {
   return (double)frames / rate();
 }
 
+int au_seek(double seconds) {
+  if (!g_loaded || seconds < 0) return 0;
+  SInt64 frame = (SInt64)(seconds * rate());
+  return ExtAudioFileSeek(g_file, frame) == noErr;
+}
+
 void au_set_volume(float v) {
   if (g_au_ready) AudioUnitSetParameter(g_au, kHALOutputParam_Volume, kAudioUnitScope_Output, 0, v, 0);
 }
