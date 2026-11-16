@@ -61,6 +61,7 @@ pub struct App {
     seek: Rect,   // seek track rect, design space
     playing: bool,
     current: Option<usize>,   // index of the loaded/playing track, not the list cursor
+    inset: i32,               // titlebar height to keep clear (traffic lights live there)
 }
 
 impl App {
@@ -98,6 +99,7 @@ impl App {
             seek: Rect::new(0, 0, 0, 0),
             playing: false,
             current: None,
+            inset: 0,
         };
         if !audio::init() {
             println!("audio: engine init failed");
@@ -112,10 +114,18 @@ impl App {
         self.layout();
     }
 
+    /// Height of the transparent titlebar strip the shell keeps above us.
+    pub fn set_inset(&mut self, px: i32) {
+        if px != self.inset {
+            self.inset = px;
+            self.layout();
+        }
+    }
+
     fn layout(&mut self) {
         let (w, h) = (self.canvas.w(), self.canvas.h());
-        self.list.view_h = h - BAR_H;
-        self.list.clamp(w, h);
+        self.list.y = self.inset;
+        self.list.view_h = (h - BAR_H - self.inset).max(0);
         if let Some(i) = self.list.selected {
             self.list.ensure_visible(i, h);
         }

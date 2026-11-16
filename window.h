@@ -19,6 +19,7 @@ void fl_close(fl_window *f);
 void *fl_buffer(fl_window *f);   // BGRA8 pixel data, w*h*4 bytes, row-major
 int fl_width(fl_window *f);
 int fl_height(fl_window *f);
+int fl_top_inset(fl_window *f);   // titlebar height kept clear above the content
 void fl_flush(fl_window *f);     // tell WindowServer the pixels changed
 
 // Grow-only surface: resizing a window smaller never reallocates and never

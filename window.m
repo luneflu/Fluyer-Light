@@ -40,6 +40,7 @@ struct fl_window {
   void *tick_ud;
   void *timer;   // __bridge NSTimer
   void *view;   // __bridge FLView, for layout during resize
+  int inset;    // titlebar strip above the content, kept clear for traffic lights
   int pend_w, pend_h, scheduled;
   IOSurfaceRef pending;
   void *key_ud;
@@ -53,6 +54,8 @@ struct fl_window {
 
 @implementation FLView
 - (BOOL)acceptsFirstResponder { return YES; }
+/* Layer-backed views default to NO, which kills background dragging. */
+- (BOOL)mouseDownCanMoveWindow { return YES; }
 - (BOOL)isOpaque { return YES; }
 
 /* Live resize stretches the existing surface (nearest); the crisp surface is
@@ -114,8 +117,17 @@ struct fl_window {
 
 - (void)mouseDown:(NSEvent *)e {
   struct fl_window *f = self.owner;
-  if (!f || !f->mouse) return;
+  if (!f) return;
   NSPoint p = [self convertPoint:e.locationInWindow fromView:nil];
+  FLLOG("mouseDown click=%ld p=%.0f,%.0f bounds=%.0fx%.0f inset=%d", (long)e.clickCount,
+        p.x, p.y, self.bounds.size.width, self.bounds.size.height, f->inset);
+  /* Double-click the titlebar strip (full-size content view has no real titlebar). */
+  if (e.clickCount == 2 && p.y >= self.bounds.size.height - f->inset) {
+    FLLOG("titlebar double-click: zoom");
+    [self.window zoom:nil];
+    return;
+  }
+  if (!f->mouse) return;
   f->mouse((int)p.x, f->h - (int)p.y, f->mouse_ud);
 }
 @end
@@ -166,10 +178,22 @@ fl_window *fl_open(int w, int h, const char *title) {
                           NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                   backing:NSBackingStoreBuffered defer:NO];
   [win setTitle:@(title)];
+  /* Standard titlebar height, measured before the content view takes it over. */
+  int inset = (int)(win.frame.size.height - win.contentLayoutRect.size.height);
+  /* Transparent full-size titlebar: traffic lights only, no title bar chrome. The
+     content view now spans the whole frame, so the canvas is h + inset tall and the
+     app keeps `inset` design px clear at the top. */
+  win.styleMask |= NSWindowStyleMaskFullSizeContentView;
+  win.titlebarAppearsTransparent = YES;
+  win.titleVisibility = NSWindowTitleHidden;
+  win.movableByWindowBackground = YES;   // drag anywhere in the client area moves the window
   win.releasedWhenClosed = NO;
   win.minSize = NSMakeSize(64, 48);
+  f->inset = inset;
+  f->w = w;
+  f->h = (int)win.frame.size.height;
 
-  FLView *v = [[FLView alloc] initWithFrame:NSMakeRect(0, 0, w, h)];
+  FLView *v = [[FLView alloc] initWithFrame:NSMakeRect(0, 0, w, f->h)];
   v.owner = f;
   f->view = (__bridge void *)v;
   f->layer = [CALayer layer];
@@ -186,7 +210,7 @@ fl_window *fl_open(int w, int h, const char *title) {
   [win setContentView:v];
   [win center];
   [win makeKeyAndOrderFront:nil];
-  FLLOG("open %dx%d surface=%dx%d (cap %dx%d)", w, h, f->w, f->h, cw, ch);
+  FLLOG("open %dx%d (requested %dx%d inset %d) cap %dx%d", f->w, f->h, w, h, inset, cw, ch);
   [win makeFirstResponder:v];
   [app activateIgnoringOtherApps:YES];
 
@@ -202,6 +226,8 @@ void fl_close(fl_window *f) {
 }
 
 void *fl_buffer(fl_window *f) { return IOSurfaceGetBaseAddress(f->surface); }
+int fl_top_inset(fl_window *f) { return f ? f->inset : 0; }
+
 int fl_width(fl_window *f) { return f->w; }
 int fl_height(fl_window *f) { return f->h; }
 

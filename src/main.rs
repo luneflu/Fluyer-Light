@@ -33,6 +33,9 @@ extern "C" {
     fn fl_flush(f: *mut FlWindow);
     fn fl_resize_ensure(f: *mut FlWindow, w: c_int, h: c_int, stride: *mut c_int) -> *mut c_void;
     fn fl_log(msg: *const c_char);
+    fn fl_top_inset(f: *mut FlWindow) -> c_int;
+    fn fl_width(f: *mut FlWindow) -> c_int;
+    fn fl_height(f: *mut FlWindow) -> c_int;
     fn fl_on_key(f: *mut FlWindow, cb: extern "C" fn(c_int, u32, *mut c_void), ud: *mut c_void);
     fn fl_on_mouse(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
     fn fl_on_resize(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
@@ -97,6 +100,7 @@ extern "C" fn on_resize(w: c_int, h: c_int, _ud: *mut c_void) {
         return;
     }
     // SAFETY: surface holds at least w*h BGRA pixels at `stride` per row.
+    ar.0.set_inset(unsafe { fl_top_inset(ar.1) });
     ar.0.resize(unsafe { Canvas::new(px as *mut u8, w, h, stride) });
     ar.0.draw();
     log(&format!("rust drawn {w}x{h} stride={stride}"));
@@ -126,13 +130,24 @@ fn main() {
     let win = unsafe { fl_open(W, H, title.as_ptr()) };
     assert!(!win.is_null(), "fl_open failed");
 
-    // Ask the shell for the real stride: the surface is screen-sized, not W*H.
+    // The shell grows the window by the titlebar height, so canvas size comes from it.
+    let mut vw: c_int = W;
+    let mut vh: c_int = H;
+    unsafe {
+        vw = fl_width(win);
+        vh = fl_height(win);
+    }
+    // Ask the shell for the real stride: the surface is screen-sized, not w*h.
     let mut stride: c_int = 0;
-    let px = unsafe { fl_resize_ensure(win, W, H, &mut stride) };
-    assert!(!px.is_null() && stride >= W, "fl_resize_ensure failed");
+    let px = unsafe { fl_resize_ensure(win, vw, vh, &mut stride) };
+    assert!(!px.is_null() && stride >= vw, "fl_resize_ensure failed");
     // SAFETY: surface holds at least W*H BGRA pixels at `stride` per row.
-    let canvas = unsafe { Canvas::new(px as *mut u8, W, H, stride) };
-    let mut holder = Box::new(AppRef(App::new(canvas), win));
+    let canvas = unsafe { Canvas::new(px as *mut u8, vw, vh, stride) };
+    let mut app = App::new(canvas);
+    let ins = unsafe { fl_top_inset(win) };
+    log(&format!("rust inset {ins} canvas {vw}x{vh}"));
+    app.set_inset(ins);
+    let mut holder = Box::new(AppRef(app, win));
     app_ref.store(&mut *holder as *mut AppRef, Ordering::Relaxed);
 
     present();
