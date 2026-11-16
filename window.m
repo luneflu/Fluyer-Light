@@ -56,8 +56,14 @@ struct fl_window {
 - (BOOL)canBecomeMainWindow { return YES; }
 @end
 
-fl_window *fl_open(int w, int h, int scale, const char *title) {
+fl_window *fl_open(int w, int h, const char *title) {
+  NSApplication *app = [NSApplication sharedApplication];
+  [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+  // DPI: one design pixel -> backingScaleFactor device pixels, integer only.
+  int scale = (int)lround([NSScreen mainScreen].backingScaleFactor);
   if (scale < 1) scale = 1;
+  if (scale > 4) scale = 4;
   struct fl_window *f = calloc(1, sizeof *f);
   f->w = w;
   f->h = h;
@@ -72,9 +78,6 @@ fl_window *fl_open(int w, int h, int scale, const char *title) {
     (id)kIOSurfacePixelFormat: @(0x42475241)   // 'BGRA'
   });
   if (!f->surface) { free(f); return NULL; }
-
-  NSApplication *app = [NSApplication sharedApplication];
-  [app setActivationPolicy:NSApplicationActivationPolicyRegular];
 
   FLWindow *win = [[FLWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, w * scale, h * scale)

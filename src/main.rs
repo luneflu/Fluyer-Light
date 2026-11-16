@@ -20,10 +20,9 @@ struct FlWindow {
 
 const W: i32 = 400;
 const H: i32 = 225;
-const SCALE: i32 = 2;
 
 extern "C" {
-    fn fl_open(w: c_int, h: c_int, scale: c_int, title: *const c_char) -> *mut FlWindow;
+    fn fl_open(w: c_int, h: c_int, title: *const c_char) -> *mut FlWindow;
     fn fl_close(f: *mut FlWindow);
     fn fl_buffer(f: *mut FlWindow) -> *mut c_void;
     fn fl_flush(f: *mut FlWindow);
@@ -88,7 +87,7 @@ fn main() {
     reexec_nano_off();
 
     let title = CString::new("fluyer-low").unwrap();
-    let win = unsafe { fl_open(W, H, SCALE, title.as_ptr()) };
+    let win = unsafe { fl_open(W, H, title.as_ptr()) };
     assert!(!win.is_null(), "fl_open failed");
 
     // SAFETY: surface is W*H BGRA pixels, alive until fl_close.

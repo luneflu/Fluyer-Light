@@ -3,6 +3,7 @@
 use crate::font_atlas::{ASCENT, BITMAP, DESCENT, FIRST, GLYPHS};
 use crate::gfx::{Canvas, Rect};
 
+#[allow(dead_code)]
 pub const LINE_HEIGHT: i32 = ASCENT + DESCENT;
 
 fn glyph(c: char) -> &'static crate::font_atlas::Glyph {
@@ -10,10 +11,12 @@ fn glyph(c: char) -> &'static crate::font_atlas::Glyph {
     &GLYPHS[idx.min(GLYPHS.len() - 1)]
 }
 
+#[allow(dead_code)]
 pub fn text_width(text: &str, scale: i32) -> i32 {
     text.chars().map(|c| glyph(c).adv as i32 * scale).sum()
 }
 
+#[allow(dead_code)]
 pub fn text_height(scale: i32) -> i32 {
     LINE_HEIGHT * scale
 }

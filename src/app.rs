@@ -8,7 +8,7 @@ pub const BG: u32 = 0xFF18_1818; // memory order BGRA
 pub const FG: u32 = 0xFFF0_F0F0;
 
 const TEXT: &str = "Hello, World!";
-const SCALE: i32 = 3;
+const SCALE: i32 = 2;
 const STEP: i32 = 3;
 
 pub enum Outcome {

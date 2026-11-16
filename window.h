@@ -7,7 +7,8 @@ typedef struct fl_window fl_window;
 typedef void (*fl_key_cb)(int keycode, unsigned mods, void *ud);
 typedef void (*fl_mouse_cb)(int x, int y, void *ud);
 
-fl_window *fl_open(int w, int h, int scale, const char *title);
+// Window is upscaled by the display's integer backing scale; w/h are design pixels.
+fl_window *fl_open(int w, int h, const char *title);
 void fl_close(fl_window *f);
 
 void *fl_buffer(fl_window *f);   // BGRA8 pixel data, w*h*4 bytes, row-major
