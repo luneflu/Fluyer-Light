@@ -215,6 +215,28 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
   return DefWindowProcA(hwnd, msg, wp, lp);
 }
 
+static void style_caption(HWND hwnd) {
+  HMODULE dwm = LoadLibraryA("dwmapi.dll");
+  if (dwm) {
+    typedef HRESULT(WINAPI * dwm_set_fn)(HWND, DWORD, LPCVOID, DWORD);
+    dwm_set_fn set = (dwm_set_fn)(void *)GetProcAddress(dwm, "DwmSetWindowAttribute");
+    if (set) {
+      BOOL on = TRUE;
+      set(hwnd, 20, &on, sizeof on); // DWMWA_USE_IMMERSIVE_DARK_MODE
+      COLORREF bg = RGB(0x18, 0x18, 0x18);
+      set(hwnd, 35, &bg, sizeof bg); // DWMWA_CAPTION_COLOR: same grey as the app
+    }
+  }
+  // Icon gone, title text gone: caption buttons and the drag strip are all that is left.
+  LONG_PTR ex = GetWindowLongPtrA(hwnd, GWL_EXSTYLE);
+  SetWindowLongPtrA(hwnd, GWL_EXSTYLE, ex | WS_EX_DLGMODALFRAME);
+  SendMessageA(hwnd, WM_SETICON, ICON_SMALL, 0);
+  SendMessageA(hwnd, WM_SETICON, ICON_BIG, 0);
+  SetWindowTextA(hwnd, "");
+  SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+}
+
 fl_window *fl_open(int w, int h, const char *title) {
   dpi_init();
 
@@ -253,6 +275,7 @@ fl_window *fl_open(int w, int h, const char *title) {
   }
 
   g_scale = (double)dpi_of(f->hwnd) / 96.0;
+  style_caption(f->hwnd);
   if (!alloc_surface(f, w, h)) {
     DestroyWindow(f->hwnd);
     free(f);
