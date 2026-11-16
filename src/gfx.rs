@@ -31,14 +31,19 @@ impl Rect {
 pub struct Canvas {
     w: i32,
     h: i32,
+    stride: i32,   // pixels per row in the backing surface (>= w)
     px: *mut u32,
     dirty: Rect,
 }
 
 impl Canvas {
     /// SAFETY: `px` must point at `w * h` contiguous u32 pixels for the process lifetime.
-    pub unsafe fn new(px: *mut u32, w: i32, h: i32) -> Self {
-        Self { w, h, px, dirty: Rect::default() }
+    pub unsafe fn new(px: *mut u32, w: i32, h: i32, stride: i32) -> Self {
+        Self { w, h, stride, px, dirty: Rect::default() }
+    }
+
+    pub fn stride(&self) -> i32 {
+        self.stride
     }
 
     pub fn w(&self) -> i32 {
@@ -76,8 +81,10 @@ impl Canvas {
     }
 
     fn row(&mut self, y: i32) -> &mut [u32] {
-        // SAFETY: y is clipped to [0, h) by callers; row stride is w.
-        unsafe { std::slice::from_raw_parts_mut(self.px.add((y * self.w) as usize), self.w as usize) }
+        // SAFETY: y is clipped to [0, h) by callers; rows live `stride` apart.
+        unsafe {
+            std::slice::from_raw_parts_mut(self.px.add((y * self.stride) as usize), self.w as usize)
+        }
     }
 
     /// Opaque solid fill. One `fill` per row.

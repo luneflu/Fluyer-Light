@@ -4,20 +4,44 @@
 #import <QuartzCore/QuartzCore.h>
 #import <IOSurface/IOSurface.h>
 #include <malloc/malloc.h>
-#include <unistd.h>
+#include <stdarg.h>
+#include <time.h>
+#include <stdio.h>
 #include "window.h"
+
+void fl_log(const char *msg) {
+  static FILE *f;
+  if (!f) f = fopen("/tmp/fluyer-low.log", "a");
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  double ms = ts.tv_sec * 1000.0 + ts.tv_nsec / 1e6;
+  fprintf(stderr, "[%9.1f] %s\n", ms, msg);
+  if (f) {
+    fprintf(f, "[%9.1f] %s\n", ms, msg);
+    fflush(f);
+  }
+}
+
+#define FLLOG(...) do { char _b[256]; snprintf(_b, sizeof _b, __VA_ARGS__); fl_log(_b); } while (0)
 
 @interface CALayer (ContentsChanged)
 - (void)setContentsChanged;
 @end
 
 struct fl_window {
-  int w, h, scale;
+  int w, h;       // current view size (design px)
+  int cap_w, cap_h; // surface size; never reallocated
   IOSurfaceRef surface;
   CALayer *layer;
   fl_key_cb key;
   fl_mouse_cb mouse;
-  void *ud;
+  fl_resize_cb resize;
+  void *view;   // __bridge FLView, for layout during resize
+  int pend_w, pend_h, scheduled;
+  IOSurfaceRef pending;
+  void *key_ud;
+  void *mouse_ud;
+  void *resize_ud;
 };
 
 @interface FLView : NSView
@@ -28,6 +52,51 @@ struct fl_window {
 - (BOOL)acceptsFirstResponder { return YES; }
 - (BOOL)isOpaque { return YES; }
 
+/* Live resize stretches the existing surface (nearest); the crisp surface is
+   reallocated once when the drag ends, so no half-painted frame is ever shown. */
+/* Layer-hosting view: AppKit does not resize our layer for us. */
+- (void)layout {
+  [super layout];
+  struct fl_window *f = self.owner;
+  if (f && f->layer) f->layer.frame = self.bounds;
+}
+
+- (void)viewDidEndLiveResize {
+  [super viewDidEndLiveResize];
+  FLLOG("liveResize END bounds=%.0fx%.0f", self.bounds.size.width, self.bounds.size.height);
+  [self scheduleResize:self.bounds.size];
+}
+
+- (void)scheduleResize:(NSSize)s {
+  struct fl_window *f = self.owner;
+  if (!f || !f->resize) return;
+  int w = (int)lround(s.width);
+  int h = (int)lround(s.height);
+  if (w < 1 || h < 1) return;
+  if (w == f->w && h == f->h) return;
+  FLLOG("schedule %dx%d (surface %dx%d)", w, h, f->w, f->h);
+  f->pend_w = w;
+  f->pend_h = h;
+  if (f->scheduled) return;
+  f->scheduled = 1;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    f->scheduled = 0;
+    FLLOG("dispatch resize %dx%d", f->pend_w, f->pend_h);
+    if (!f->resize) return;
+    if (f->pend_w == f->w && f->pend_h == f->h) return;
+    f->resize(f->pend_w, f->pend_h, f->resize_ud);
+  });
+}
+
+- (void)setFrameSize:(NSSize)s {
+  [super setFrameSize:s];
+  struct fl_window *f = self.owner;
+  FLLOG("setFrameSize %.0fx%.0f live=%d surface=%dx%d", s.width, s.height,
+        (int)self.inLiveResize, f ? f->w : 0, f ? f->h : 0);
+  if (self.inLiveResize) return;   // handled in viewDidEndLiveResize
+  [self scheduleResize:s];
+}
+
 - (void)keyDown:(NSEvent *)e {
   struct fl_window *f = self.owner;
   if (!f || !f->key) return;
@@ -37,14 +106,14 @@ struct fl_window {
   if (m & NSEventModifierFlagShift) mods |= 1u << 1;
   if (m & NSEventModifierFlagControl) mods |= 1u << 2;
   if (m & NSEventModifierFlagOption) mods |= 1u << 3;
-  f->key((int)e.keyCode, mods, f->ud);
+  f->key((int)e.keyCode, mods, f->key_ud);
 }
 
 - (void)mouseDown:(NSEvent *)e {
   struct fl_window *f = self.owner;
   if (!f || !f->mouse) return;
   NSPoint p = [self convertPoint:e.locationInWindow fromView:nil];
-  f->mouse((int)p.x / f->scale, f->h - (int)p.y / f->scale, f->ud);
+  f->mouse((int)p.x, f->h - (int)p.y, f->mouse_ud);
 }
 @end
 
@@ -56,54 +125,62 @@ struct fl_window {
 - (BOOL)canBecomeMainWindow { return YES; }
 @end
 
-fl_window *fl_open(int w, int h, const char *title) {
-  NSApplication *app = [NSApplication sharedApplication];
-  [app setActivationPolicy:NSApplicationActivationPolicyRegular];
-
-  // DPI: one design pixel -> backingScaleFactor device pixels, integer only.
-  int scale = (int)lround([NSScreen mainScreen].backingScaleFactor);
-  if (scale < 1) scale = 1;
-  if (scale > 4) scale = 4;
-  struct fl_window *f = calloc(1, sizeof *f);
-  f->w = w;
-  f->h = h;
-  f->scale = scale;
-
-  f->surface = IOSurfaceCreate((__bridge CFDictionaryRef)@{
+static IOSurfaceRef make_surface(int w, int h) {
+  return IOSurfaceCreate((__bridge CFDictionaryRef)@{
     (id)kIOSurfaceWidth: @(w),
     (id)kIOSurfaceHeight: @(h),
     (id)kIOSurfaceBytesPerElement: @(4),
     (id)kIOSurfaceBytesPerRow: @(w * 4),
     (id)kIOSurfaceAllocSize: @(w * h * 4),
-    (id)kIOSurfacePixelFormat: @(0x42475241)   // 'BGRA'
+    (id)kIOSurfacePixelFormat: @(0x42475241)   // 'BGRA'; @('BGRA') boxes to char 65
   });
+}
+
+fl_window *fl_open(int w, int h, const char *title) {
+  NSApplication *app = [NSApplication sharedApplication];
+  [app setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+  struct fl_window *f = calloc(1, sizeof *f);
+  f->w = w;
+  f->h = h;
+  /* One surface for the process lifetime: swapping layer.contents on resize
+     stops CA from repainting it, so allocate the largest area we may need. */
+  NSRect screen = [NSScreen mainScreen].frame;
+  int cw = (int)screen.size.width;
+  int ch = (int)screen.size.height;
+  if (cw < w) cw = w;
+  if (ch < h) ch = h;
+  f->cap_w = cw;
+  f->cap_h = ch;
+  f->surface = make_surface(cw, ch);
   if (!f->surface) { free(f); return NULL; }
 
   FLWindow *win = [[FLWindow alloc]
-      initWithContentRect:NSMakeRect(0, 0, w * scale, h * scale)
+      initWithContentRect:NSMakeRect(0, 0, w, h)
                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                          NSWindowStyleMaskMiniaturizable
+                          NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
                   backing:NSBackingStoreBuffered defer:NO];
   [win setTitle:@(title)];
-  win.movableByWindowBackground = YES;
   win.releasedWhenClosed = NO;
+  win.minSize = NSMakeSize(64, 48);
 
-  FLView *v = [[FLView alloc] initWithFrame:NSMakeRect(0, 0, w * scale, h * scale)];
+  FLView *v = [[FLView alloc] initWithFrame:NSMakeRect(0, 0, w, h)];
   v.owner = f;
+  f->view = (__bridge void *)v;
   f->layer = [CALayer layer];
   f->layer.contents = (__bridge id)f->surface;
   f->layer.opaque = YES;
   f->layer.magnificationFilter = kCAFilterNearest;
   f->layer.minificationFilter = kCAFilterNearest;
-  f->layer.contentsScale = 1.0;
-  f->layer.contentsGravity = kCAGravityResize;
-  f->layer.bounds = CGRectMake(0, 0, w, h);   // design space, compositor does integer upscale
+  f->layer.contentsScale = 1.0;   // 1 design px per point; AppKit scales to the backing store
+  f->layer.contentsGravity = kCAGravityTopLeft;   // 1:1 crop, never stretch
   v.layer = f->layer;
   v.wantsLayer = YES;
 
   [win setContentView:v];
   [win center];
   [win makeKeyAndOrderFront:nil];
+  FLLOG("open %dx%d surface=%dx%d (cap %dx%d)", w, h, f->w, f->h, cw, ch);
   [win makeFirstResponder:v];
   [app activateIgnoringOtherApps:YES];
 
@@ -113,6 +190,7 @@ fl_window *fl_open(int w, int h, const char *title) {
 
 void fl_close(fl_window *f) {
   if (!f) return;
+  if (f->pending) CFRelease(f->pending);
   if (f->surface) CFRelease(f->surface);
   free(f);
 }
@@ -123,7 +201,37 @@ int fl_height(fl_window *f) { return f->h; }
 
 void fl_flush(fl_window *f) { [f->layer setContentsChanged]; }
 
-void fl_on_key(fl_window *f, fl_key_cb cb, void *ud) { f->key = cb; f->ud = ud; }
-void fl_on_mouse(fl_window *f, fl_mouse_cb cb, void *ud) { f->mouse = cb; f->ud = ud; }
+void *fl_resize_begin(fl_window *f, int w, int h) {
+  if (!f || w < 1 || h < 1) { FLLOG("begin REJECT %dx%d", w, h); return NULL; }
+  IOSurfaceRef s = make_surface(w, h);
+  if (!s) { FLLOG("begin FAIL surface %dx%d", w, h); return NULL; }
+  FLLOG("begin %dx%d ok", w, h);
+  if (f->pending) CFRelease(f->pending);
+  f->pending = s;
+  f->w = w;
+  f->h = h;
+  return IOSurfaceGetBaseAddress(s);
+}
+
+void *fl_resize_ensure(fl_window *f, int w, int h, int *stride) {
+  if (!f || w < 1 || h < 1) {
+    FLLOG("ensure REJECT %dx%d", w, h);
+    return NULL;
+  }
+  if (w > f->cap_w) { FLLOG("ensure clamp w %d -> %d", w, f->cap_w); w = f->cap_w; }
+  if (h > f->cap_h) { FLLOG("ensure clamp h %d -> %d", h, f->cap_h); h = f->cap_h; }
+  f->w = w;
+  f->h = h;
+  NSView *v = (__bridge NSView *)f->view;
+  f->layer.frame = v.bounds;
+  if (stride) *stride = (int)(IOSurfaceGetBytesPerRow(f->surface) / 4);
+  FLLOG("ensure %dx%d cap=%dx%d stride=%d", w, h, f->cap_w, f->cap_h,
+        stride ? *stride : -1);
+  return IOSurfaceGetBaseAddress(f->surface);
+}
+
+void fl_on_key(fl_window *f, fl_key_cb cb, void *ud) { f->key = cb; f->key_ud = ud; }
+void fl_on_mouse(fl_window *f, fl_mouse_cb cb, void *ud) { f->mouse = cb; f->mouse_ud = ud; }
+void fl_on_resize(fl_window *f, fl_resize_cb cb, void *ud) { f->resize = cb; f->resize_ud = ud; }
 
 void fl_run(fl_window *f) { [NSApp run]; }

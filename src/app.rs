@@ -24,15 +24,23 @@ pub struct App {
 
 impl App {
     pub fn new(canvas: Canvas) -> Self {
-        let (w, h) = (canvas.w(), canvas.h());
+        let mut app = Self { canvas, pos: (0, 0) };
+        app.layout();
+        app
+    }
+
+    /// Shell handed us a new surface; re-centre and keep drawing.
+    pub fn resize(&mut self, canvas: Canvas) {
+        self.canvas = canvas;
+        self.layout();
+    }
+
+    fn layout(&mut self) {
         let ink = font::ink_bounds(TEXT, SCALE);
-        Self {
-            canvas,
-            pos: (
-                (w - ink.w) / 2 - ink.x,
-                (h - ink.h) / 2 - ink.y,
-            ),
-        }
+        self.pos = (
+            (self.canvas.w() - ink.w) / 2 - ink.x,
+            (self.canvas.h() - ink.h) / 2 - ink.y,
+        );
     }
 
     pub fn handle(&mut self, ev: Event) -> Outcome {
