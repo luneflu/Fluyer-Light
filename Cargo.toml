@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 
+[dev-dependencies]
+ttf-parser = "0.25"
+
 [profile.release]
 panic = "abort"
 opt-level = 3

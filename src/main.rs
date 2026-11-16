@@ -1,6 +1,8 @@
 // main: FFI to the Cocoa shell, event pump bridge, lifetime wiring.
 
 mod app;
+mod font;
+mod font_atlas;
 mod gfx;
 mod input;
 
