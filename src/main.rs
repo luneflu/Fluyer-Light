@@ -41,11 +41,16 @@ extern "C" {
     fn fl_on_resize(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
     fn fl_on_tick(f: *mut FlWindow, cb: extern "C" fn(*mut c_void), ud: *mut c_void, ms: c_int);
     fn fl_run(f: *mut FlWindow);
+}
+
+#[cfg(target_os = "macos")]
+extern "C" {
     fn execv(path: *const c_char, argv: *const *const c_char) -> c_int;
 }
 
 struct AppRef(App, *mut FlWindow);
 
+// SAFETY: single-threaded main runloop; the Box lives for the process.
 static app_ref: AtomicPtr<AppRef> = AtomicPtr::new(ptr::null_mut());
 
 fn app() -> &'static mut AppRef {
@@ -107,6 +112,7 @@ extern "C" fn on_resize(w: c_int, h: c_int, _ud: *mut c_void) {
     unsafe { fl_flush(ar.1) };
 }
 
+#[cfg(target_os = "macos")]
 fn reexec_nano_off() {
     // nanov2 keeps partially used slabs (~1 MB). Only settable before malloc init -> re-exec.
     if std::env::var("MallocNanoZone").as_deref() == Ok("0") {
@@ -122,6 +128,9 @@ fn reexec_nano_off() {
         execv(cpath.as_ptr(), argv.as_ptr());
     }
 }
+
+#[cfg(not(target_os = "macos"))]
+fn reexec_nano_off() {}
 
 fn main() {
     reexec_nano_off();

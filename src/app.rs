@@ -16,7 +16,24 @@ const SEL_BG: u8 = 0x40;
 const BAR_BG: u8 = 0x1C;
 const TRACK_BG: u8 = 0x30;
 
-const MUSIC: &str = "/Users/alvindimas05/Music/The Meaning of Life";
+/// Library root. Windows has no fixed user path, so derive it from the profile
+/// and fall back to the working directory when the folder is missing.
+#[cfg(target_os = "macos")]
+fn music_dir() -> String {
+    "/Users/alvindimas05/Music/The Meaning of Life".to_string()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn music_dir() -> String {
+    // let base = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
+    // let music = format!("{base}\\Music");
+    // if std::path::Path::new(&format!("{music}\\The Meaning of Life")).is_dir() {
+    //     format!("{music}\\The Meaning of Life")
+    // } else {
+    //     music
+    // }
+    "E:\\Music".to_string()
+}
 const SCALE: i32 = 2;
 const PAD: i32 = 8;
 
@@ -66,12 +83,13 @@ pub struct App {
 
 impl App {
     pub fn new(canvas: Canvas) -> Self {
-        let tracks = library::scan(MUSIC);
+        let music = music_dir();
+        let tracks = library::scan(&music);
         let items = tracks
             .iter()
             .map(|p| Item { label: library::label(p).to_string() })
             .collect();
-        println!("{} audio files in {MUSIC}", tracks.len());
+        println!("{} audio files in {music}", tracks.len());
         let mut app = Self {
             canvas,
             list: List {

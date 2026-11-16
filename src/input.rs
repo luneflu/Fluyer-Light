@@ -42,6 +42,7 @@ impl Mods {
 
 impl Key {
     /// macOS virtual keycodes (layout independent).
+    #[cfg(target_os = "macos")]
     pub fn from_keycode(code: i32) -> Self {
         match code {
             53 => Key::Escape,
@@ -52,6 +53,22 @@ impl Key {
             124 => Key::Right,
             125 => Key::Down,
             126 => Key::Up,
+            _ => Key::Other,
+        }
+    }
+
+    /// Win32 virtual-key codes.
+    #[cfg(not(target_os = "macos"))]
+    pub fn from_keycode(code: i32) -> Self {
+        match code {
+            0x1B => Key::Escape,
+            0x51 => Key::Q,
+            0x0D => Key::Enter,
+            0x20 => Key::Space,
+            0x25 => Key::Left,
+            0x27 => Key::Right,
+            0x28 => Key::Down,
+            0x26 => Key::Up,
             _ => Key::Other,
         }
     }
