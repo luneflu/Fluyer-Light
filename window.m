@@ -129,10 +129,12 @@ static IOSurfaceRef make_surface(int w, int h) {
   return IOSurfaceCreate((__bridge CFDictionaryRef)@{
     (id)kIOSurfaceWidth: @(w),
     (id)kIOSurfaceHeight: @(h),
-    (id)kIOSurfaceBytesPerElement: @(4),
-    (id)kIOSurfaceBytesPerRow: @(w * 4),
-    (id)kIOSurfaceAllocSize: @(w * h * 4),
-    (id)kIOSurfacePixelFormat: @(0x42475241)   // 'BGRA'; @('BGRA') boxes to char 65
+    (id)kIOSurfaceBytesPerElement: @(1),
+    (id)kIOSurfaceBytesPerRow: @(w),
+    (id)kIOSurfaceAllocSize: @(w * h),
+    /* 'L008' single 8-bit luminance plane: 1.27 MB at 1440x900 vs 5.18 MB for BGRA.
+       @('BGRA') boxes to char 65, hence the raw fourcc. */
+    (id)kIOSurfacePixelFormat: @(0x4C303038)
   });
 }
 
@@ -168,6 +170,7 @@ fl_window *fl_open(int w, int h, const char *title) {
   v.owner = f;
   f->view = (__bridge void *)v;
   f->layer = [CALayer layer];
+  f->layer.contentsFormat = kCAContentsFormatGray8Uint;   // matches 'L008'
   f->layer.contents = (__bridge id)f->surface;
   f->layer.opaque = YES;
   f->layer.magnificationFilter = kCAFilterNearest;
@@ -224,7 +227,7 @@ void *fl_resize_ensure(fl_window *f, int w, int h, int *stride) {
   f->h = h;
   NSView *v = (__bridge NSView *)f->view;
   f->layer.frame = v.bounds;
-  if (stride) *stride = (int)(IOSurfaceGetBytesPerRow(f->surface) / 4);
+  if (stride) *stride = (int)(IOSurfaceGetBytesPerRow(f->surface) / (int)IOSurfaceGetBytesPerElement(f->surface));
   FLLOG("ensure %dx%d cap=%dx%d stride=%d", w, h, f->cap_w, f->cap_h,
         stride ? *stride : -1);
   return IOSurfaceGetBaseAddress(f->surface);

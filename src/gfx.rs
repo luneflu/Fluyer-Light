@@ -1,4 +1,4 @@
-// gfx: a fixed BGRA8 canvas over the IOSurface mapping. No allocator, no traits.
+// gfx: a fixed 8-bit luminance canvas over the IOSurface mapping. No allocator, no traits.
 
 #[derive(Clone, Copy, Default)]
 pub struct Rect {
@@ -32,13 +32,13 @@ pub struct Canvas {
     w: i32,
     h: i32,
     stride: i32,   // pixels per row in the backing surface (>= w)
-    px: *mut u32,
+    px: *mut u8,
     dirty: Rect,
 }
 
 impl Canvas {
-    /// SAFETY: `px` must point at `w * h` contiguous u32 pixels for the process lifetime.
-    pub unsafe fn new(px: *mut u32, w: i32, h: i32, stride: i32) -> Self {
+    /// SAFETY: `px` must point at `w * h` contiguous u8 pixels for the process lifetime.
+    pub unsafe fn new(px: *mut u8, w: i32, h: i32, stride: i32) -> Self {
         Self { w, h, stride, px, dirty: Rect::default() }
     }
 
@@ -80,7 +80,7 @@ impl Canvas {
         Rect::new(x0, y0, (x1 - x0).max(0), (y1 - y0).max(0))
     }
 
-    fn row(&mut self, y: i32) -> &mut [u32] {
+    fn row(&mut self, y: i32) -> &mut [u8] {
         // SAFETY: y is clipped to [0, h) by callers; rows live `stride` apart.
         unsafe {
             std::slice::from_raw_parts_mut(self.px.add((y * self.stride) as usize), self.w as usize)
@@ -88,7 +88,7 @@ impl Canvas {
     }
 
     /// Opaque solid fill. One `fill` per row.
-    pub fn fill(&mut self, r: Rect, color: u32) {
+    pub fn fill(&mut self, r: Rect, color: u8) {
         let r = self.clip(r);
         if r.w == 0 || r.h == 0 {
             return;
@@ -98,13 +98,13 @@ impl Canvas {
         }
     }
 
-    pub fn clear(&mut self, color: u32) {
+    pub fn clear(&mut self, color: u8) {
         self.fill(Rect::new(0, 0, self.w, self.h), color);
     }
 
     /// Copy a same-format w*h image at (x, y), clipped. Sprites/font glyphs go through here.
     #[allow(dead_code)]
-    pub fn blit(&mut self, src: &[u32], sw: i32, sh: i32, at: (i32, i32)) {
+    pub fn blit(&mut self, src: &[u8], sw: i32, sh: i32, at: (i32, i32)) {
         for sy in 0..sh {
             let dy = at.1 + sy;
             if dy < 0 || dy >= self.h {
@@ -124,7 +124,7 @@ impl Canvas {
 
     /// 1-bit glyph blit: bit set -> fg, clear -> nothing (bg untouched).
     #[allow(dead_code)]
-    pub fn blit_1bpp(&mut self, src: &[u8], sw: i32, sh: i32, at: (i32, i32), fg: u32) {
+    pub fn blit_1bpp(&mut self, src: &[u8], sw: i32, sh: i32, at: (i32, i32), fg: u8) {
         for sy in 0..sh {
             let dy = at.1 + sy;
             if dy < 0 || dy >= self.h {

@@ -9,6 +9,7 @@ pub enum Key {
     Up,
     Down,
     Enter,
+    Space,
     Other,
 }
 
@@ -45,6 +46,7 @@ impl Key {
             53 => Key::Escape,
             12 => Key::Q,
             36 => Key::Enter,
+            49 => Key::Space,
             123 => Key::Left,
             124 => Key::Right,
             125 => Key::Down,

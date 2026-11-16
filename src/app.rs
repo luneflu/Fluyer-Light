@@ -1,12 +1,13 @@
 // app: retained state + event handling. Draws only into the canvas.
 
+use crate::audio;
 use crate::library;
 use crate::gfx::Canvas;
 use crate::input::{Event, Key};
 use crate::widget::{Item, List};
 
-pub const BG: u32 = 0xFF18_1818; // memory order BGRA
-pub const FG: u32 = 0xFFF0_F0F0;
+pub const BG: u8 = 0x18; // 8-bit luminance: 24,24,24
+pub const FG: u8 = 0xF0; // 240,240,240
 
 const MUSIC: &str = "/Users/alvindimas05/Music/The Meaning of Life";
 const SCALE: i32 = 2;
@@ -42,9 +43,9 @@ impl App {
                 pad_x: 8,
                 pad_y: 4,
                 gap: 0,
-                bg: 0xFF20_2020,
-                alt_bg: 0xFF24_2424,
-                sel_bg: 0xFF40_4040,
+                bg: 0x20,
+                alt_bg: 0x24,
+                sel_bg: 0x40,
                 fg: FG,
                 sel_fg: FG,
                 selected: if tracks.is_empty() { None } else { Some(0) },
@@ -53,6 +54,9 @@ impl App {
             tracks,
         };
         app.layout();
+        if !audio::init() {
+            println!("audio: engine init failed");
+        }
         app
     }
 
@@ -77,15 +81,20 @@ impl App {
                 Key::Up => self.move_by(-1),
                 Key::Down => self.move_by(1),
                 Key::Enter => {
-                    self.print_selected();
-                    Outcome::Idle
+                    self.play_selected();
+                    Outcome::Redraw
+                }
+                Key::Space => {
+                    audio::toggle();
+                    println!("audio: playing={}", audio::is_playing());
+                    Outcome::Redraw
                 }
                 _ => Outcome::Idle,
             },
             Event::MouseDown { x, y } => {
                 if let Some(i) = self.list.hit(x, y, self.canvas.w()) {
                     self.list.selected = Some(i);
-                    self.print_selected();
+                    self.play_selected();
                     return Outcome::Redraw;
                 }
                 Outcome::Idle
@@ -108,12 +117,13 @@ impl App {
         Outcome::Redraw
     }
 
-    fn print_selected(&self) {
-        if let Some(i) = self.list.selected {
-            if let Some(path) = self.tracks.get(i) {
-                println!("play: {path}");
-            }
-        }
+    fn play_selected(&self) {
+        let Some(path) = self.list.selected.and_then(|i| self.tracks.get(i)) else {
+            return;
+        };
+        let ok = audio::play(path);
+        let (pos, len) = audio::progress();
+        println!("play {ok}: {path} ({pos:.1}/{len:.1}s)");
     }
 
     /// Full redraw into the canvas: clear, then draw retained elements.

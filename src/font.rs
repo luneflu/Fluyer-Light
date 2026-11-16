@@ -45,7 +45,7 @@ pub fn ink_bounds(text: &str, scale: i32) -> Rect {
 }
 
 /// `y` is the ascender line (top of the line box), not the glyph top.
-pub fn draw(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32, color: u32) {
+pub fn draw(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32, color: u8) {
     let mut pen = x;
     for c in text.chars() {
         let g = glyph(c);

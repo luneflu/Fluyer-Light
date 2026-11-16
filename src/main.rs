@@ -1,6 +1,7 @@
 // main: FFI to the Cocoa shell, event pump bridge, lifetime wiring.
 
 mod app;
+mod audio;
 mod font;
 mod font_atlas;
 mod gfx;
@@ -91,7 +92,7 @@ extern "C" fn on_resize(w: c_int, h: c_int, _ud: *mut c_void) {
         return;
     }
     // SAFETY: surface holds at least w*h BGRA pixels at `stride` per row.
-    ar.0.resize(unsafe { Canvas::new(px as *mut u32, w, h, stride) });
+    ar.0.resize(unsafe { Canvas::new(px as *mut u8, w, h, stride) });
     ar.0.draw();
     log(&format!("rust drawn {w}x{h} stride={stride}"));
     unsafe { fl_flush(ar.1) };
@@ -125,7 +126,7 @@ fn main() {
     let px = unsafe { fl_resize_ensure(win, W, H, &mut stride) };
     assert!(!px.is_null() && stride >= W, "fl_resize_ensure failed");
     // SAFETY: surface holds at least W*H BGRA pixels at `stride` per row.
-    let canvas = unsafe { Canvas::new(px as *mut u32, W, H, stride) };
+    let canvas = unsafe { Canvas::new(px as *mut u8, W, H, stride) };
     let mut holder = Box::new(AppRef(App::new(canvas), win));
     app_ref.store(&mut *holder as *mut AppRef, Ordering::Relaxed);
 
@@ -139,5 +140,6 @@ fn main() {
         fl_run(win);
         fl_close(win);
     }
+    audio::quit();
     drop(holder);
 }

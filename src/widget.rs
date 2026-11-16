@@ -11,10 +11,10 @@ pub struct Button {
     pub scale: i32,
     pub pad_x: i32,
     pub pad_y: i32,
-    pub bg: u32,
-    pub border: u32,
+    pub bg: u8,
+    pub border: u8,
     pub border_w: i32,
-    pub fg: u32,
+    pub fg: u8,
 }
 
 impl Button {
@@ -79,11 +79,11 @@ pub struct List {
     pub pad_x: i32,
     pub pad_y: i32,
     pub gap: i32,
-    pub bg: u32,
-    pub alt_bg: u32,
-    pub sel_bg: u32,
-    pub fg: u32,
-    pub sel_fg: u32,
+    pub bg: u8,
+    pub alt_bg: u8,
+    pub sel_bg: u8,
+    pub fg: u8,
+    pub sel_fg: u8,
     pub selected: Option<usize>,
     pub scroll: usize, // first visible row
 }
