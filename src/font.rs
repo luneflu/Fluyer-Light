@@ -18,6 +18,29 @@ pub fn text_height(scale: i32) -> i32 {
     LINE_HEIGHT * scale
 }
 
+/// Ink bounds of `text` relative to the draw origin (ascender line).
+/// Line metrics lie (descent + side bearings); centring needs real ink.
+pub fn ink_bounds(text: &str, scale: i32) -> Rect {
+    let mut pen = 0;
+    let (mut x0, mut y0) = (i32::MAX, i32::MAX);
+    let (mut x1, mut y1) = (i32::MIN, i32::MIN);
+    for c in text.chars() {
+        let g = glyph(c);
+        let (gw, gh) = (g.w as i32 * scale, g.h as i32 * scale);
+        if gw > 0 && gh > 0 {
+            x0 = x0.min(pen + g.x0 as i32 * scale);
+            y0 = y0.min(g.y0 as i32 * scale);
+            x1 = x1.max(pen + (g.x0 as i32 * scale + gw));
+            y1 = y1.max(g.y0 as i32 * scale + gh);
+        }
+        pen += g.adv as i32 * scale;
+    }
+    if x0 == i32::MAX {
+        return Rect::default();
+    }
+    Rect::new(x0, y0, x1 - x0, y1 - y0)
+}
+
 /// `y` is the ascender line (top of the line box), not the glyph top.
 pub fn draw(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32, color: u32) {
     let mut pen = x;

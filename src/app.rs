@@ -25,11 +25,12 @@ pub struct App {
 impl App {
     pub fn new(canvas: Canvas) -> Self {
         let (w, h) = (canvas.w(), canvas.h());
+        let ink = font::ink_bounds(TEXT, SCALE);
         Self {
             canvas,
             pos: (
-                (w - font::text_width(TEXT, SCALE)) / 2,
-                (h - font::text_height(SCALE)) / 2,
+                (w - ink.w) / 2 - ink.x,
+                (h - ink.h) / 2 - ink.y,
             ),
         }
     }
@@ -46,8 +47,8 @@ impl App {
                 _ => Outcome::Idle,
             },
             Event::MouseDown { x, y } => {
-                let (tw, th) = (font::text_width(TEXT, SCALE), font::text_height(SCALE));
-                self.pos = self.clamp(x - tw / 2, y - th / 2);
+                let ink = font::ink_bounds(TEXT, SCALE);
+                self.pos = self.clamp(x - ink.w / 2 - ink.x, y - ink.h / 2 - ink.y);
                 Outcome::Redraw
             }
         }
@@ -60,8 +61,11 @@ impl App {
     }
 
     fn clamp(&self, x: i32, y: i32) -> (i32, i32) {
-        let (tw, th) = (font::text_width(TEXT, SCALE), font::text_height(SCALE));
-        (x.clamp(0, self.canvas.w() - tw), y.clamp(0, self.canvas.h() - th))
+        let ink = font::ink_bounds(TEXT, SCALE);
+        (
+            x.clamp(-ink.x, self.canvas.w() - ink.x - ink.w),
+            y.clamp(-ink.y, self.canvas.h() - ink.y - ink.h),
+        )
     }
 
     /// Full redraw into the canvas: clear, then draw retained elements.
