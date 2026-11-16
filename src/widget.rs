@@ -62,3 +62,132 @@ impl Button {
         font::draw(c, self.label, tx, ty, self.scale, self.fg);
     }
 }
+
+/// One row. Label only for now; add fields when rows carry state.
+#[derive(Clone)]
+pub struct Item {
+    pub label: String,
+}
+
+/// Vertical stack of items. Row height derives from the font, so no stored sizes.
+pub struct List {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32, // <= 0: fill canvas width minus the left/right margin
+    pub items: Vec<Item>,
+    pub scale: i32,
+    pub pad_x: i32,
+    pub pad_y: i32,
+    pub gap: i32,
+    pub bg: u32,
+    pub alt_bg: u32,
+    pub sel_bg: u32,
+    pub fg: u32,
+    pub sel_fg: u32,
+    pub selected: Option<usize>,
+    pub scroll: usize, // first visible row
+}
+
+impl List {
+    pub fn row_h(&self) -> i32 {
+        font::LINE_HEIGHT * self.scale + 2 * self.pad_y
+    }
+
+    pub fn stride(&self) -> i32 {
+        self.row_h() + self.gap
+    }
+
+    /// Rows that fit between `y` and the canvas bottom.
+    pub fn visible(&self, ch: i32) -> usize {
+        ((ch - self.y).max(0) / self.stride()) as usize
+    }
+
+    /// Scroll the least amount that keeps row `i` on screen.
+    pub fn ensure_visible(&mut self, i: usize, ch: i32) {
+        let vis = self.visible(ch).max(1);
+        if i < self.scroll {
+            self.scroll = i;
+        } else if i >= self.scroll + vis {
+            self.scroll = i + 1 - vis;
+        }
+        self.scroll = self.scroll.min(self.items.len().saturating_sub(1));
+    }
+
+    pub fn width(&self, canvas_w: i32) -> i32 {
+        if self.w > 0 {
+            self.w
+        } else {
+            (canvas_w - 2 * self.x).max(0)
+        }
+    }
+
+    pub fn rect(&self, canvas_w: i32) -> Rect {
+        let n = (self.items.len() - self.scroll.min(self.items.len())) as i32;
+        let h = if n <= 0 { 0 } else { n * self.row_h() + (n - 1) * self.gap };
+        Rect::new(self.x, self.y, self.width(canvas_w), h)
+    }
+
+    pub fn row(&self, i: usize, canvas_w: i32) -> Rect {
+        Rect::new(
+            self.x,
+            self.y + (i - self.scroll) as i32 * self.stride(),
+            self.width(canvas_w),
+            self.row_h(),
+        )
+    }
+
+    /// Which row contains a design-space point (gap counts as dead space).
+    pub fn hit(&self, px: i32, py: i32, canvas_w: i32) -> Option<usize> {
+        let w = self.width(canvas_w);
+        if px < self.x || px >= self.x + w {
+            return None;
+        }
+        let dy = py - self.y;
+        if dy < 0 {
+            return None;
+        }
+        let i = self.scroll + (dy / self.stride()) as usize;
+        if i >= self.items.len() || dy % self.stride() >= self.row_h() {
+            return None;
+        }
+        Some(i)
+    }
+
+    pub fn clamp(&mut self, cw: i32, ch: i32) {
+        let (w, h) = (self.width(cw), self.rect(cw).h);
+        self.x = self.x.clamp(0, (cw - w).max(0));
+        self.y = self.y.clamp(0, (ch - h).max(0));
+    }
+
+    pub fn draw(&self, c: &mut Canvas) {
+        let cw = c.w();
+        for i in self.scroll..self.items.len() {
+            let item = &self.items[i];
+            let r = self.row(i, cw);
+            if r.y >= c.h() {
+                break;
+            }
+            let sel = self.selected == Some(i);
+            c.fill(
+                r,
+                if sel {
+                    self.sel_bg
+                } else if i % 2 == 1 {
+                    self.alt_bg
+                } else {
+                    self.bg
+                },
+            );
+            let fg = if sel { self.sel_fg } else { self.fg };
+            let ink = font::ink_bounds(&item.label, self.scale);
+            font::draw(
+                c,
+                &item.label,
+                r.x + self.pad_x,
+                r.y + (r.h - ink.h) / 2 - ink.y,
+                self.scale,
+                fg,
+            );
+        }
+    }
+}
