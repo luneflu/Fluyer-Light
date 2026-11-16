@@ -29,6 +29,7 @@ void *fl_resize_ensure(fl_window *f, int w, int h, int *stride);
 
 void fl_on_key(fl_window *f, fl_key_cb cb, void *ud);
 void fl_on_mouse(fl_window *f, fl_mouse_cb cb, void *ud);
+void fl_on_mouse_up(fl_window *f, fl_mouse_cb cb, void *ud);
 void fl_on_resize(fl_window *f, fl_resize_cb cb, void *ud);
 void fl_on_tick(fl_window *f, fl_tick_cb cb, void *ud, int ms);
 

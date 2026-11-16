@@ -1,20 +1,20 @@
 // app: retained state + event handling. Draws only into the canvas.
 
 use crate::audio;
+use crate::buttons;
 use crate::font;
-use crate::gfx::{Canvas, Rect};
+use crate::gfx::{grey, Color, Canvas, Rect};
 use crate::input::{Event, Key};
 use crate::library;
 use crate::widget::{Button, Item, List};
 
-pub const BG: u8 = 0x18; // 8-bit luminance: 24,24,24
-pub const FG: u8 = 0xF0; // 240,240,240
-const DIM: u8 = 0x70;
-const ROW_BG: u8 = 0x20;
-const ROW_ALT: u8 = 0x24;
-const SEL_BG: u8 = 0x40;
-const BAR_BG: u8 = 0x1C;
-const TRACK_BG: u8 = 0x30;
+pub const BG: Color = grey(0x18); // 24,24,24
+pub const FG: Color = grey(0xF0); // 240,240,240
+const ROW_BG: Color = grey(0x20);
+const ROW_ALT: Color = grey(0x24);
+const SEL_BG: Color = grey(0x40);
+const BAR_BG: Color = grey(0x1C);
+const TRACK_BG: Color = grey(0x30);
 
 /// Library root. Windows has no fixed user path, so derive it from the profile
 /// and fall back to the working directory when the folder is missing.
@@ -34,7 +34,7 @@ fn music_dir() -> String {
     // }
     "E:\\Music".to_string()
 }
-const SCALE: i32 = 2;
+const SCALE: i32 = 4;
 const PAD: i32 = 8;
 
 // Bottom bar: seek track on top, then name + transport row.
@@ -51,6 +51,34 @@ pub enum Outcome {
     Quit,
 }
 
+/// Which control is held down, so its clicked frame can be drawn.
+#[derive(Clone, Copy, PartialEq)]
+enum Hit {
+    None,
+    Play,
+    Prev,
+    Next,
+}
+
+// controls.png frames: 0 play, 1 play-down, 2 pause, 3 pause-down,
+// 4 next, 5 next-down, 6 prev, 7 prev-down.
+const F_PLAY: usize = 0;
+const F_PAUSE: usize = 2;
+const F_NEXT: usize = 4;
+const F_PREV: usize = 6;
+
+fn ctrl(c: &mut Canvas, b: &Button, frame: usize) {
+    const N: usize = (buttons::CONTROLS_W * buttons::CONTROLS_H) as usize;
+    let r = b.rect();
+    c.blit_masked(
+        &buttons::CONTROLS[frame * N..(frame + 1) * N],
+        buttons::CONTROLS_W,
+        buttons::CONTROLS_H,
+        (r.x, r.y),
+        ICON / buttons::CONTROLS_H,
+    );
+}
+
 fn button(label: &'static str) -> Button {
     Button {
         x: 0,
@@ -59,9 +87,9 @@ fn button(label: &'static str) -> Button {
         scale: SCALE,
         pad_x: 8,
         pad_y: 4,
-        bg: 0x38,
-        border: 0x60,
-        border_w: 1,
+        bg: 0, // no chrome: the sprite is the button
+        border: 0,
+        border_w: 0,
         fg: FG,
         fixed_w: 0,
         fixed_h: 0,
@@ -77,6 +105,7 @@ pub struct App {
     next: Button,
     seek: Rect,   // seek track rect, design space
     playing: bool,
+    press: Hit, // held control: draws its clicked frame
     current: Option<usize>,   // index of the loaded/playing track, not the list cursor
     inset: i32,               // titlebar height to keep clear (traffic lights live there)
 }
@@ -116,6 +145,7 @@ impl App {
             next: Button { fixed_w: ICON, fixed_h: ICON, pad_x: 0, pad_y: 0, ..button(">") },
             seek: Rect::new(0, 0, 0, 0),
             playing: false,
+            press: Hit::None,
             current: None,
             inset: 0,
         };
@@ -188,12 +218,15 @@ impl App {
             }
             Event::MouseDown { x, y } => {
                 if self.play.contains(x, y) {
+                    self.press = Hit::Play;
                     return self.toggle();
                 }
                 if self.prev.contains(x, y) {
+                    self.press = Hit::Prev;
                     return self.step_track(-1);
                 }
                 if self.next.contains(x, y) {
+                    self.press = Hit::Next;
                     return self.step_track(1);
                 }
                 if self.seek.w > 0 && self.seek.h > 0 && inside(self.seek, x, y) {
@@ -207,6 +240,13 @@ impl App {
                     return self.play_selected();
                 }
                 Outcome::Idle
+            }
+            Event::MouseUp => {
+                if self.press == Hit::None {
+                    return Outcome::Idle;
+                }
+                self.press = Hit::None;
+                Outcome::Redraw
             }
         }
     }
@@ -284,16 +324,14 @@ impl App {
             );
         }
 
-        let mut play = self.play;
-        play.label = ""; // filled icon instead of a glyph
-        play.draw(&mut self.canvas);
-        if self.playing {
-            icon_pause(&mut self.canvas, play.rect(), FG);
-        } else {
-            icon_play(&mut self.canvas, play.rect(), FG);
-        }
-        self.prev.draw(&mut self.canvas);
-        self.next.draw(&mut self.canvas);
+        let down = |hit: Hit| (self.press == hit) as usize;
+        ctrl(&mut self.canvas, &self.prev, F_PREV + down(Hit::Prev));
+        ctrl(
+            &mut self.canvas,
+            &self.play,
+            if self.playing { F_PAUSE } else { F_PLAY } + down(Hit::Play),
+        );
+        ctrl(&mut self.canvas, &self.next, F_NEXT + down(Hit::Next));
 
         // Seek track + progress.
         if self.seek.w > 0 {
@@ -307,41 +345,7 @@ impl App {
                 }
             }
         }
-        let _ = DIM;
         self.canvas.mark_all();
-    }
-}
-
-// Icons are sized to the glyph ink of "<" / ">": 5x5 cells at SCALE, so 10x10 design px.
-const TRI: [i32; 5] = [1, 3, 5, 3, 1];
-const ICON_W: i32 = 5;
-const ICON_H: i32 = 5;
-
-fn icon_origin(r: Rect) -> (i32, i32) {
-    (
-        r.x + (r.w - ICON_W * SCALE) / 2,
-        r.y + (r.h - ICON_H * SCALE) / 2,
-    )
-}
-
-fn icon_play(c: &mut Canvas, r: Rect, color: u8) {
-    let (ox, oy) = icon_origin(r);
-    for (i, len) in TRI.iter().enumerate() {
-        c.fill(
-            Rect::new(ox, oy + i as i32 * SCALE, len * SCALE, SCALE),
-            color,
-        );
-    }
-}
-
-fn icon_pause(c: &mut Canvas, r: Rect, color: u8) {
-    let (ox, oy) = icon_origin(r);
-    // gap,bar,gap,bar,gap across the 5-cell box: two separate 1-cell bars
-    for bar in [1, 3] {
-        c.fill(
-            Rect::new(ox + bar * SCALE, oy, SCALE, ICON_H * SCALE),
-            color,
-        );
     }
 }
 

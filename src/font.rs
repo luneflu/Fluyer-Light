@@ -1,7 +1,7 @@
 // font: draws the baked Cairopixel atlas (src/font_atlas.rs) as integer-scaled pixel rects.
 
 use crate::font_atlas::{ASCENT, BITMAP, DESCENT, FIRST, GLYPHS};
-use crate::gfx::{Canvas, Rect};
+use crate::gfx::{Canvas, Color, Rect};
 
 #[allow(dead_code)]
 pub const LINE_HEIGHT: i32 = ASCENT + DESCENT;
@@ -45,7 +45,7 @@ pub fn ink_bounds(text: &str, scale: i32) -> Rect {
 }
 
 /// `y` is the ascender line (top of the line box), not the glyph top.
-pub fn draw(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32, color: u8) {
+pub fn draw(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32, color: Color) {
     let mut pen = x;
     for c in text.chars() {
         let g = glyph(c);

@@ -1,7 +1,7 @@
 // widget: retained widgets drawn into the canvas. Position is absolute design px.
 
 use crate::font;
-use crate::gfx::{Canvas, Rect};
+use crate::gfx::{Canvas, Color, Rect};
 
 #[derive(Clone, Copy)]
 pub struct Button {
@@ -11,10 +11,10 @@ pub struct Button {
     pub scale: i32,
     pub pad_x: i32,
     pub pad_y: i32,
-    pub bg: u8,
-    pub border: u8,
+    pub bg: Color,
+    pub border: Color,
     pub border_w: i32,
-    pub fg: u8,
+    pub fg: Color,
     pub fixed_w: i32, // > 0: ignore text-derived size (square icon buttons)
     pub fixed_h: i32,
 }
@@ -53,7 +53,7 @@ impl Button {
 
     pub fn draw(&self, c: &mut Canvas) {
         let r = self.rect();
-        c.fill(r, self.bg);
+        c.fill(r, self.bg); // 0 = no chrome, sprite only
 
         let bw = self.border_w.max(0).min(r.w / 2).min(r.h / 2);
         if bw > 0 {
@@ -87,11 +87,11 @@ pub struct List {
     pub pad_x: i32,
     pub pad_y: i32,
     pub gap: i32,
-    pub bg: u8,
-    pub alt_bg: u8,
-    pub sel_bg: u8,
-    pub fg: u8,
-    pub sel_fg: u8,
+    pub bg: Color,
+    pub alt_bg: Color,
+    pub sel_bg: Color,
+    pub fg: Color,
+    pub sel_fg: Color,
     pub selected: Option<usize>,
     pub scroll: usize, // first visible row
     pub view_h: i32,   // rows are clipped below this y (0 = whole canvas)

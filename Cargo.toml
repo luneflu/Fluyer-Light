@@ -10,6 +10,7 @@ cc = "1.4"
 
 [dev-dependencies]
 ttf-parser = "0.25"
+png = "0.17"
 
 [profile.release]
 lto = "fat"

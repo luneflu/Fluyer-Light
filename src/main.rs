@@ -2,6 +2,7 @@
 
 mod app;
 mod audio;
+mod buttons;
 mod font;
 mod font_atlas;
 mod gfx;
@@ -38,6 +39,11 @@ extern "C" {
     fn fl_height(f: *mut FlWindow) -> c_int;
     fn fl_on_key(f: *mut FlWindow, cb: extern "C" fn(c_int, u32, *mut c_void), ud: *mut c_void);
     fn fl_on_mouse(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
+    fn fl_on_mouse_up(
+        f: *mut FlWindow,
+        cb: extern "C" fn(c_int, c_int, *mut c_void),
+        ud: *mut c_void,
+    );
     fn fl_on_resize(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
     fn fl_on_tick(f: *mut FlWindow, cb: extern "C" fn(*mut c_void), ud: *mut c_void, ms: c_int);
     fn fl_run(f: *mut FlWindow);
@@ -84,6 +90,10 @@ extern "C" fn on_key(keycode: c_int, mod_bits: u32, _ud: *mut c_void) {
 
 extern "C" fn on_mouse(x: c_int, y: c_int, _ud: *mut c_void) {
     dispatch(Event::MouseDown { x, y });
+}
+
+extern "C" fn on_mouse_up(_x: c_int, _y: c_int, _ud: *mut c_void) {
+    dispatch(Event::MouseUp);
 }
 
 extern "C" fn on_tick(_ud: *mut c_void) {
@@ -164,6 +174,7 @@ fn main() {
     unsafe {
         fl_on_key(win, on_key, ptr::null_mut());
         fl_on_mouse(win, on_mouse, ptr::null_mut());
+        fl_on_mouse_up(win, on_mouse_up, ptr::null_mut());
         fl_on_resize(win, on_resize, ptr::null_mut());
         fl_on_tick(win, on_tick, ptr::null_mut(), 250);
         fl_flush(win);

@@ -35,6 +35,8 @@ struct fl_window {
   CALayer *layer;
   fl_key_cb key;
   fl_mouse_cb mouse;
+  fl_mouse_cb mouse_up;
+  void *mouse_up_ud;
   fl_resize_cb resize;
   fl_tick_cb tick;
   void *tick_ud;
@@ -130,6 +132,11 @@ struct fl_window {
   if (!f->mouse) return;
   f->mouse((int)p.x, f->h - (int)p.y, f->mouse_ud);
 }
+
+- (void)mouseUp:(NSEvent *)e {
+  struct fl_window *f = self.owner;
+  if (f && f->mouse_up) f->mouse_up(0, 0, f->mouse_up_ud);
+}
 @end
 
 @interface FLWindow : NSWindow
@@ -144,12 +151,12 @@ static IOSurfaceRef make_surface(int w, int h) {
   return IOSurfaceCreate((__bridge CFDictionaryRef)@{
     (id)kIOSurfaceWidth: @(w),
     (id)kIOSurfaceHeight: @(h),
-    (id)kIOSurfaceBytesPerElement: @(1),
-    (id)kIOSurfaceBytesPerRow: @(w),
-    (id)kIOSurfaceAllocSize: @(w * h),
-    /* 'L008' single 8-bit luminance plane: 1.27 MB at 1440x900 vs 5.18 MB for BGRA.
+    (id)kIOSurfaceBytesPerElement: @(4),
+    (id)kIOSurfaceBytesPerRow: @(w * 4),
+    (id)kIOSurfaceAllocSize: @(w * h * 4),
+    /* 'BGRA' 8-bit colour, byte order matches the canvas (0xAARRGGBB).
        @('BGRA') boxes to char 65, hence the raw fourcc. */
-    (id)kIOSurfacePixelFormat: @(0x4C303038)
+    (id)kIOSurfacePixelFormat: @(0x42475241)
   });
 }
 
@@ -197,7 +204,7 @@ fl_window *fl_open(int w, int h, const char *title) {
   v.owner = f;
   f->view = (__bridge void *)v;
   f->layer = [CALayer layer];
-  f->layer.contentsFormat = kCAContentsFormatGray8Uint;   // matches 'L008'
+  f->layer.contentsFormat = kCAContentsFormatRGBA8Uint;   // matches 'BGRA' bytes
   f->layer.contents = (__bridge id)f->surface;
   f->layer.opaque = YES;
   f->layer.magnificationFilter = kCAFilterNearest;
@@ -264,6 +271,10 @@ void *fl_resize_ensure(fl_window *f, int w, int h, int *stride) {
 
 void fl_on_key(fl_window *f, fl_key_cb cb, void *ud) { f->key = cb; f->key_ud = ud; }
 void fl_on_mouse(fl_window *f, fl_mouse_cb cb, void *ud) { f->mouse = cb; f->mouse_ud = ud; }
+void fl_on_mouse_up(fl_window *f, fl_mouse_cb cb, void *ud) {
+  f->mouse_up = cb;
+  f->mouse_up_ud = ud;
+}
 void fl_on_resize(fl_window *f, fl_resize_cb cb, void *ud) { f->resize = cb; f->resize_ud = ud; }
 
 @interface FLTickTarget : NSObject

@@ -1,5 +1,5 @@
-// window_win32.c - Win32 shell only: window, 8bpp DIB, event forwarding.
-// Same contract as window.m: Rust owns the pixels, one byte of luminance each.
+// window_win32.c - Win32 shell only: window, 32bpp DIB, event forwarding.
+// Same contract as window.m: Rust owns the pixels, 0xAARRGGBB each.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -31,16 +31,18 @@ void fl_log(const char *msg) {
 
 struct fl_window {
   HWND hwnd;
-  void *bits;        // grow-only 8bpp surface, top-down rows
+  void *bits;        // grow-only 32bpp BGRA surface, top-down rows
   HBITMAP bmp;       // owns `bits`; deleting it frees them
   int cap_w, cap_h;  // surface size in pixels
   int w, h;          // current view size, design px
-  int stride;        // bytes per row (4-aligned by GDI)
+  int stride;        // pixels per row
   fl_key_cb key;
   fl_mouse_cb mouse;
+  fl_mouse_cb mouse_up;
   fl_resize_cb resize;
   fl_tick_cb tick;
   void *key_ud, *mouse_ud, *resize_ud, *tick_ud;
+  void *mouse_up_ud;
   int inset;         // no titlebar strip on Windows; kept for API parity
   UINT_PTR timer;
 };
@@ -75,34 +77,26 @@ static int alloc_surface(struct fl_window *f, int w, int h) {
   if (f->bits && w <= f->cap_w && h <= f->cap_h) return 1;
   int cw = w > f->cap_w ? w : f->cap_w;
   int ch = h > f->cap_h ? h : f->cap_h;
-  struct {
-    BITMAPINFOHEADER h;
-    RGBQUAD c[256];
-  } bi;
+  BITMAPINFO bi;
   memset(&bi, 0, sizeof bi);
-  bi.h.biSize = sizeof(BITMAPINFOHEADER);
-  bi.h.biWidth = cw;
-  bi.h.biHeight = -ch; // top-down
-  bi.h.biPlanes = 1;
-  bi.h.biBitCount = 8;
-  bi.h.biCompression = BI_RGB;
-  bi.h.biClrUsed = 256;
-  for (int i = 0; i < 256; i++) {
-    bi.c[i].rgbBlue = bi.c[i].rgbGreen = bi.c[i].rgbRed = (BYTE)i;
-    bi.c[i].rgbReserved = 0;
-  }
+  bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bi.bmiHeader.biWidth = cw;
+  bi.bmiHeader.biHeight = -ch; // top-down
+  bi.bmiHeader.biPlanes = 1;
+  bi.bmiHeader.biBitCount = 32; // BGRA, no palette: matches the canvas layout
+  bi.bmiHeader.biCompression = BI_RGB;
   void *bits = NULL;
   HDC dc = GetDC(NULL);
-  HBITMAP bmp = CreateDIBSection(dc, (const BITMAPINFO *)&bi, DIB_RGB_COLORS, &bits, NULL, 0);
+  HBITMAP bmp = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, NULL, 0);
   if (dc) ReleaseDC(NULL, dc);
   if (!bmp || !bits) return 0;
   if (f->bmp) DeleteObject(f->bmp); // frees the old bits
   f->bmp = bmp;
-  memset(bits, 0, (size_t)cw * ch);
+  memset(bits, 0, (size_t)cw * ch * 4);
   f->bits = bits;
   f->cap_w = cw;
   f->cap_h = ch;
-  f->stride = (cw + 3) & ~3;
+  f->stride = cw; // 32bpp rows are already 4-byte aligned
   return 1;
 }
 
@@ -112,23 +106,17 @@ static void blit(struct fl_window *f) {
   if (!dc) return;
   RECT rc;
   GetClientRect(f->hwnd, &rc);
-  struct {
-    BITMAPINFOHEADER h;
-    RGBQUAD c[256];
-  } bi;
+  BITMAPINFO bi;
   memset(&bi, 0, sizeof bi);
-  bi.h.biSize = sizeof(BITMAPINFOHEADER);
-  bi.h.biWidth = f->cap_w;
-  bi.h.biHeight = -f->cap_h;
-  bi.h.biPlanes = 1;
-  bi.h.biBitCount = 8;
-  bi.h.biCompression = BI_RGB;
-  bi.h.biClrUsed = 256;
-  for (int i = 0; i < 256; i++)
-    bi.c[i].rgbBlue = bi.c[i].rgbGreen = bi.c[i].rgbRed = (BYTE)i;
+  bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+  bi.bmiHeader.biWidth = f->cap_w;
+  bi.bmiHeader.biHeight = -f->cap_h;
+  bi.bmiHeader.biPlanes = 1;
+  bi.bmiHeader.biBitCount = 32;
+  bi.bmiHeader.biCompression = BI_RGB;
 
   SetStretchBltMode(dc, COLORONCOLOR); // nearest neighbour: pixel art stays crisp
-  StretchDIBits(dc, 0, 0, rc.right, rc.bottom, 0, 0, f->w, f->h, f->bits, (const BITMAPINFO *)&bi, DIB_RGB_COLORS,
+  StretchDIBits(dc, 0, 0, rc.right, rc.bottom, 0, 0, f->w, f->h, f->bits, &bi, DIB_RGB_COLORS,
                 SRCCOPY);
   ReleaseDC(f->hwnd, dc);
 }
@@ -204,6 +192,9 @@ static LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
       int y = (int)((short)HIWORD(lp) / g_scale); // client coords are already top-down
       f->mouse(x, y, f->mouse_ud);
     }
+    return 0;
+  case WM_LBUTTONUP:
+    if (f && f->mouse_up) f->mouse_up(0, 0, f->mouse_up_ud);
     return 0;
   case WM_CLOSE:
     PostQuitMessage(0);
@@ -322,6 +313,10 @@ void *fl_resize_ensure(fl_window *f, int w, int h, int *stride) {
 
 void fl_on_key(fl_window *f, fl_key_cb cb, void *ud) { f->key = cb; f->key_ud = ud; }
 void fl_on_mouse(fl_window *f, fl_mouse_cb cb, void *ud) { f->mouse = cb; f->mouse_ud = ud; }
+void fl_on_mouse_up(fl_window *f, fl_mouse_cb cb, void *ud) {
+  f->mouse_up = cb;
+  f->mouse_up_ud = ud;
+}
 void fl_on_resize(fl_window *f, fl_resize_cb cb, void *ud) { f->resize = cb; f->resize_ud = ud; }
 
 void fl_on_tick(fl_window *f, fl_tick_cb cb, void *ud, int ms) {

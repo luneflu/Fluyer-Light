@@ -1,4 +1,18 @@
-// gfx: a fixed 8-bit luminance canvas over the IOSurface mapping. No allocator, no traits.
+// gfx: a fixed 32-bit colour canvas over the platform surface. No allocator, no traits.
+// Colours are packed 0xAARRGGBB and stored BGRA, so the bytes match every backend
+// (Windows DIB32 and IOSurface 'BGRA') without a conversion pass.
+
+/// Packed colour. 0 is fully transparent and is skipped by `fill`/blits.
+pub type Color = u32;
+
+pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
+    0xFF00_0000 | ((r as u32) << 16) | ((g as u32) << 8) | b as u32
+}
+
+/// Opaque grey, for the chrome that stays monochrome.
+pub const fn grey(v: u8) -> Color {
+    rgb(v, v, v)
+}
 
 #[derive(Clone, Copy, Default)]
 pub struct Rect {
@@ -32,14 +46,15 @@ pub struct Canvas {
     w: i32,
     h: i32,
     stride: i32,   // pixels per row in the backing surface (>= w)
-    px: *mut u8,
+    px: *mut u32,
     dirty: Rect,
 }
 
 impl Canvas {
-    /// SAFETY: `px` must point at `w * h` contiguous u8 pixels for the process lifetime.
+    /// SAFETY: `px` must point at `w * h` contiguous pixels for the process lifetime,
+    /// `stride` pixels apart per row.
     pub unsafe fn new(px: *mut u8, w: i32, h: i32, stride: i32) -> Self {
-        Self { w, h, stride, px, dirty: Rect::default() }
+        Self { w, h, stride, px: px as *mut u32, dirty: Rect::default() }
     }
 
     pub fn stride(&self) -> i32 {
@@ -80,15 +95,16 @@ impl Canvas {
         Rect::new(x0, y0, (x1 - x0).max(0), (y1 - y0).max(0))
     }
 
-    fn row(&mut self, y: i32) -> &mut [u8] {
-        // SAFETY: y is clipped to [0, h) by callers; rows live `stride` apart.
-        unsafe {
-            std::slice::from_raw_parts_mut(self.px.add((y * self.stride) as usize), self.w as usize)
-        }
+    fn row(&mut self, y: i32) -> &mut [u32] {
+        // SAFETY: y is clipped to [0, h) by callers; rows live `stride` pixels apart.
+        unsafe { std::slice::from_raw_parts_mut(self.px.add((y * self.stride) as usize), self.w as usize) }
     }
 
-    /// Opaque solid fill. One `fill` per row.
-    pub fn fill(&mut self, r: Rect, color: u8) {
+    /// Solid fill. One `fill` per row; fully transparent colour is a no-op.
+    pub fn fill(&mut self, r: Rect, color: Color) {
+        if color == 0 {
+            return;
+        }
         let r = self.clip(r);
         if r.w == 0 || r.h == 0 {
             return;
@@ -98,13 +114,13 @@ impl Canvas {
         }
     }
 
-    pub fn clear(&mut self, color: u8) {
+    pub fn clear(&mut self, color: Color) {
         self.fill(Rect::new(0, 0, self.w, self.h), color);
     }
 
-    /// Copy a same-format w*h image at (x, y), clipped. Sprites/font glyphs go through here.
+    /// Copy a same-format w*h image at (x, y), clipped.
     #[allow(dead_code)]
-    pub fn blit(&mut self, src: &[u8], sw: i32, sh: i32, at: (i32, i32)) {
+    pub fn blit(&mut self, src: &[u32], sw: i32, sh: i32, at: (i32, i32)) {
         for sy in 0..sh {
             let dy = at.1 + sy;
             if dy < 0 || dy >= self.h {
@@ -124,7 +140,7 @@ impl Canvas {
 
     /// 1-bit glyph blit: bit set -> fg, clear -> nothing (bg untouched).
     #[allow(dead_code)]
-    pub fn blit_1bpp(&mut self, src: &[u8], sw: i32, sh: i32, at: (i32, i32), fg: u8) {
+    pub fn blit_1bpp(&mut self, src: &[u8], sw: i32, sh: i32, at: (i32, i32), fg: Color) {
         for sy in 0..sh {
             let dy = at.1 + sy;
             if dy < 0 || dy >= self.h {
@@ -140,6 +156,20 @@ impl Canvas {
                     continue;
                 }
                 self.row(dy)[dx as usize] = fg;
+            }
+        }
+    }
+
+    /// Sprite blit with integer nearest upscale; 0 means transparent.
+    pub fn blit_masked(&mut self, src: &[u32], sw: i32, sh: i32, at: (i32, i32), scale: i32) {
+        let scale = scale.max(1);
+        for sy in 0..sh {
+            for sx in 0..sw {
+                let px = src[(sy * sw + sx) as usize];
+                if px == 0 {
+                    continue;
+                }
+                self.fill(Rect::new(at.0 + sx * scale, at.1 + sy * scale, scale, scale), px);
             }
         }
     }

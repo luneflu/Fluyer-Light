@@ -26,6 +26,7 @@ pub struct Mods {
 pub enum Event {
     Key { key: Key, mods: Mods },
     MouseDown { x: i32, y: i32 },
+    MouseUp,
     Tick, // main-run-loop timer; app decides whether it needs a repaint
 }
 
