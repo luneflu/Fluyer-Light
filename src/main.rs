@@ -5,6 +5,7 @@ mod font;
 mod font_atlas;
 mod gfx;
 mod input;
+mod widget;
 
 use std::ffi::{c_char, c_int, c_void, CString};
 use std::ptr;
