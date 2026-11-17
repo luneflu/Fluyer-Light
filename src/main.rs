@@ -1,4 +1,5 @@
-// main: FFI to the Cocoa shell, event pump bridge, lifetime wiring.
+// main: winit window + softbuffer present. The shell only allocates the window
+// and forwards keys/points; Canvas owns the pixels and is copied out on present.
 
 mod app;
 mod audio;
@@ -10,177 +11,178 @@ mod input;
 mod library;
 mod widget;
 
-use std::ffi::{c_char, c_int, c_void, CString};
-use std::ptr;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::num::NonZeroU32;
+use std::rc::Rc;
+use std::time::{Duration, Instant};
+
+use winit::application::ApplicationHandler;
+use winit::dpi::LogicalSize;
+use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
+use winit::window::{Window, WindowId};
 
 use app::{App, Outcome};
-use gfx::Canvas;
 use input::{Event, Key, Mods};
 
-#[repr(C)]
-struct FlWindow {
-    _private: [u8; 0],
+const W: u32 = 800;
+const H: u32 = 450;
+const TICK: Duration = Duration::from_millis(250);
+
+struct Shell {
+    window: Rc<Window>,
+    surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
+    app: App,
+    cursor: (f64, f64), // logical px
+    mods: ModifiersState,
+    last_tick: Instant,
 }
 
-// Design space = window points. Retina handled by AppKit.
-const W: i32 = 800;
-const H: i32 = 450;
+impl Shell {
+    fn present(&mut self) {
+        self.app.draw();
+        if self.app.canvas.take_dirty().w <= 0 {
+            return;
+        }
+        let size = self.window.inner_size();
+        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
+            return;
+        };
+        let Ok(mut buf) = self.surface.buffer_mut() else { return };
+        // The canvas is the same size as the window, so this is one memcpy.
+        let px = self.app.canvas.pixels();
+        if buf.len() == px.len() {
+            buf.copy_from_slice(px);
+        }
+        let _ = buf.present();
+        let _ = (w, h);
+    }
 
-extern "C" {
-    fn fl_open(w: c_int, h: c_int, title: *const c_char) -> *mut FlWindow;
-    fn fl_close(f: *mut FlWindow);
-    fn fl_buffer(f: *mut FlWindow) -> *mut c_void;
-    fn fl_flush(f: *mut FlWindow);
-    fn fl_resize_ensure(f: *mut FlWindow, w: c_int, h: c_int, stride: *mut c_int) -> *mut c_void;
-    fn fl_log(msg: *const c_char);
-    fn fl_top_inset(f: *mut FlWindow) -> c_int;
-    fn fl_width(f: *mut FlWindow) -> c_int;
-    fn fl_height(f: *mut FlWindow) -> c_int;
-    fn fl_on_key(f: *mut FlWindow, cb: extern "C" fn(c_int, u32, *mut c_void), ud: *mut c_void);
-    fn fl_on_mouse(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
-    fn fl_on_mouse_up(
-        f: *mut FlWindow,
-        cb: extern "C" fn(c_int, c_int, *mut c_void),
-        ud: *mut c_void,
-    );
-    fn fl_on_resize(f: *mut FlWindow, cb: extern "C" fn(c_int, c_int, *mut c_void), ud: *mut c_void);
-    fn fl_on_tick(f: *mut FlWindow, cb: extern "C" fn(*mut c_void), ud: *mut c_void, ms: c_int);
-    fn fl_run(f: *mut FlWindow);
-}
+    fn dispatch(&mut self, ev: Event) {
+        match self.app.handle(ev) {
+            Outcome::Quit => std::process::exit(0),
+            Outcome::Redraw => self.present(),
+            Outcome::Idle => {}
+        }
+    }
 
-#[cfg(target_os = "macos")]
-extern "C" {
-    fn execv(path: *const c_char, argv: *const *const c_char) -> c_int;
-}
-
-struct AppRef(App, *mut FlWindow);
-
-// SAFETY: single-threaded main runloop; the Box lives for the process.
-static app_ref: AtomicPtr<AppRef> = AtomicPtr::new(ptr::null_mut());
-
-fn app() -> &'static mut AppRef {
-    // SAFETY: single-threaded main-thread runloop; the Box lives for the process.
-    unsafe { &mut *app_ref.load(Ordering::Relaxed) }
-}
-
-fn present() {
-    let ar = app();
-    ar.0.draw();
-    if ar.0.canvas.take_dirty().w > 0 {
-        unsafe { fl_flush(ar.1) };
+    fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
+        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
+            return;
+        };
+        if self.surface.resize(w, h).is_err() {
+            return;
+        }
+        self.app.resize(w.get() as i32, h.get() as i32);
+        self.present();
     }
 }
 
-/// One place where a platform event becomes an app action.
-fn dispatch(ev: Event) {
-    match app().0.handle(ev) {
-        Outcome::Quit => std::process::exit(0),
-        Outcome::Redraw => present(),
-        Outcome::Idle => {}
+fn map_key(k: PhysicalKey) -> Key {
+    let PhysicalKey::Code(c) = k else { return Key::Other };
+    match c {
+        KeyCode::Escape => Key::Escape,
+        KeyCode::KeyQ => Key::Q,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Space => Key::Space,
+        KeyCode::ArrowLeft => Key::Left,
+        KeyCode::ArrowRight => Key::Right,
+        KeyCode::ArrowUp => Key::Up,
+        KeyCode::ArrowDown => Key::Down,
+        _ => Key::Other,
     }
 }
 
-extern "C" fn on_key(keycode: c_int, mod_bits: u32, _ud: *mut c_void) {
-    dispatch(Event::Key {
-        key: Key::from_keycode(keycode),
-        mods: Mods::from_bits(mod_bits),
-    });
+struct Handler {
+    shell: Option<Shell>,
 }
 
-extern "C" fn on_mouse(x: c_int, y: c_int, _ud: *mut c_void) {
-    dispatch(Event::MouseDown { x, y });
-}
+impl ApplicationHandler for Handler {
+    fn resumed(&mut self, el: &ActiveEventLoop) {
+        if self.shell.is_some() {
+            return;
+        }
+        let window = match el.create_window(
+            Window::default_attributes()
+                .with_title("fluyer-low")
+                .with_inner_size(LogicalSize::new(W, H))
+                .with_min_inner_size(LogicalSize::new(64, 48)),
+        ) {
+            Ok(w) => Rc::new(w),
+            Err(e) => {
+                eprintln!("window: {e}");
+                el.exit();
+                return;
+            }
+        };
+        let surface = softbuffer::Context::new(window.clone())
+            .and_then(|ctx| softbuffer::Surface::new(&ctx, window.clone()));
+        let surface = match surface {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("softbuffer: {e}");
+                el.exit();
+                return;
+            }
+        };
+        let size = window.inner_size();
+        let mut sh = Shell {
+            window,
+            surface,
+            app: App::new(size.width as i32, size.height as i32),
+            cursor: (0.0, 0.0),
+            mods: ModifiersState::empty(),
+            last_tick: Instant::now(),
+        };
+        sh.resize(size);
+        self.shell = Some(sh);
+    }
 
-extern "C" fn on_mouse_up(_x: c_int, _y: c_int, _ud: *mut c_void) {
-    dispatch(Event::MouseUp);
-}
+    fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        let Some(sh) = self.shell.as_mut() else { return };
+        match event {
+            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::Resized(size) => sh.resize(size),
+            WindowEvent::RedrawRequested => sh.present(),
+            WindowEvent::ModifiersChanged(m) => sh.mods = m.state(),
+            WindowEvent::CursorMoved { position, .. } => {
+                let s = sh.window.scale_factor();
+                sh.cursor = (position.x / s, position.y / s);
+            }
+            WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => match state {
+                ElementState::Pressed => {
+                    let (x, y) = (sh.cursor.0 as i32, sh.cursor.1 as i32);
+                    sh.dispatch(Event::MouseDown { x, y });
+                }
+                ElementState::Released => sh.dispatch(Event::MouseUp),
+            },
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state != ElementState::Pressed || event.repeat {
+                    return;
+                }
+                let key = map_key(event.physical_key);
+                let m = sh.mods;
+                let mods = Mods::new(m.super_key(), m.shift_key(), m.control_key(), m.alt_key());
+                sh.dispatch(Event::Key { key, mods });
+            }
+            _ => {}
+        }
+    }
 
-extern "C" fn on_tick(_ud: *mut c_void) {
-    dispatch(Event::Tick);
-}
-
-fn log(msg: &str) {
-    if let Ok(c) = CString::new(msg) {
-        unsafe { fl_log(c.as_ptr()) };
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        if let Some(sh) = self.shell.as_mut() {
+            if sh.last_tick.elapsed() >= TICK {
+                sh.last_tick = Instant::now();
+                sh.dispatch(Event::Tick);
+            }
+        }
+        el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + TICK));
     }
 }
-
-extern "C" fn on_resize(w: c_int, h: c_int, _ud: *mut c_void) {
-    let ar = app();
-    let mut stride: c_int = 0;
-    let px = unsafe { fl_resize_ensure(ar.1, w, h, &mut stride) };
-    if px.is_null() || stride < w {
-        log(&format!("rust resize rejected {w}x{h}"));
-        return;
-    }
-    // SAFETY: surface holds at least w*h BGRA pixels at `stride` per row.
-    ar.0.set_inset(unsafe { fl_top_inset(ar.1) });
-    ar.0.resize(unsafe { Canvas::new(px as *mut u8, w, h, stride) });
-    ar.0.draw();
-    log(&format!("rust drawn {w}x{h} stride={stride}"));
-    unsafe { fl_flush(ar.1) };
-}
-
-#[cfg(target_os = "macos")]
-fn reexec_nano_off() {
-    // nanov2 keeps partially used slabs (~1 MB). Only settable before malloc init -> re-exec.
-    if std::env::var("MallocNanoZone").as_deref() == Ok("0") {
-        return;
-    }
-    let exe = std::env::current_exe().expect("exe path");
-    let Ok(cpath) = CString::new(exe.to_str().expect("utf8 path")) else {
-        return;
-    };
-    let argv = [cpath.as_ptr(), ptr::null()];
-    unsafe {
-        std::env::set_var("MallocNanoZone", "0");
-        execv(cpath.as_ptr(), argv.as_ptr());
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn reexec_nano_off() {}
 
 fn main() {
-    reexec_nano_off();
-
-    let title = CString::new("fluyer-low").unwrap();
-    let win = unsafe { fl_open(W, H, title.as_ptr()) };
-    assert!(!win.is_null(), "fl_open failed");
-
-    // The shell grows the window by the titlebar height, so canvas size comes from it.
-    let mut vw: c_int = W;
-    let mut vh: c_int = H;
-    unsafe {
-        vw = fl_width(win);
-        vh = fl_height(win);
-    }
-    // Ask the shell for the real stride: the surface is screen-sized, not w*h.
-    let mut stride: c_int = 0;
-    let px = unsafe { fl_resize_ensure(win, vw, vh, &mut stride) };
-    assert!(!px.is_null() && stride >= vw, "fl_resize_ensure failed");
-    // SAFETY: surface holds at least W*H BGRA pixels at `stride` per row.
-    let canvas = unsafe { Canvas::new(px as *mut u8, vw, vh, stride) };
-    let mut app = App::new(canvas);
-    let ins = unsafe { fl_top_inset(win) };
-    log(&format!("rust inset {ins} canvas {vw}x{vh}"));
-    app.set_inset(ins);
-    let mut holder = Box::new(AppRef(app, win));
-    app_ref.store(&mut *holder as *mut AppRef, Ordering::Relaxed);
-
-    present();
-
-    unsafe {
-        fl_on_key(win, on_key, ptr::null_mut());
-        fl_on_mouse(win, on_mouse, ptr::null_mut());
-        fl_on_mouse_up(win, on_mouse_up, ptr::null_mut());
-        fl_on_resize(win, on_resize, ptr::null_mut());
-        fl_on_tick(win, on_tick, ptr::null_mut(), 250);
-        fl_flush(win);
-        fl_run(win);
-        fl_close(win);
-    }
+    let el = EventLoop::new().expect("event loop");
+    let mut h = Handler { shell: None };
+    el.run_app(&mut h).expect("run");
     audio::quit();
-    drop(holder);
 }

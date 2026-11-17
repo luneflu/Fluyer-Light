@@ -45,20 +45,19 @@ impl Rect {
 pub struct Canvas {
     w: i32,
     h: i32,
-    stride: i32,   // pixels per row in the backing surface (>= w)
-    px: *mut u32,
+    px: Vec<u32>, // w * h, row-major
     dirty: Rect,
 }
 
 impl Canvas {
-    /// SAFETY: `px` must point at `w * h` contiguous pixels for the process lifetime,
-    /// `stride` pixels apart per row.
-    pub unsafe fn new(px: *mut u8, w: i32, h: i32, stride: i32) -> Self {
-        Self { w, h, stride, px: px as *mut u32, dirty: Rect::default() }
+    pub fn new(w: i32, h: i32) -> Self {
+        let (w, h) = (w.max(1), h.max(1));
+        Self { w, h, px: vec![0; (w * h) as usize], dirty: Rect::default() }
     }
 
-    pub fn stride(&self) -> i32 {
-        self.stride
+    /// Pixels as 0xAARRGGBB, ready to hand to a 0RGB window buffer.
+    pub fn pixels(&self) -> &[u32] {
+        &self.px
     }
 
     pub fn w(&self) -> i32 {
@@ -96,8 +95,8 @@ impl Canvas {
     }
 
     fn row(&mut self, y: i32) -> &mut [u32] {
-        // SAFETY: y is clipped to [0, h) by callers; rows live `stride` pixels apart.
-        unsafe { std::slice::from_raw_parts_mut(self.px.add((y * self.stride) as usize), self.w as usize) }
+        let w = self.w as usize;
+        &mut self.px[y as usize * w..(y as usize + 1) * w]
     }
 
     /// Solid fill. One `fill` per row; fully transparent colour is a no-op.

@@ -1,4 +1,4 @@
-// input: platform-neutral events. window.m only ever sends keycodes + points.
+// input: platform-neutral events. The shell only ever hands us keys and points.
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Key {
@@ -31,46 +31,8 @@ pub enum Event {
 }
 
 impl Mods {
-    pub fn from_bits(bits: u32) -> Self {
-        Self {
-            cmd: bits & (1 << 0) != 0,
-            shift: bits & (1 << 1) != 0,
-            ctrl: bits & (1 << 2) != 0,
-            alt: bits & (1 << 3) != 0,
-        }
-    }
-}
-
-impl Key {
-    /// macOS virtual keycodes (layout independent).
-    #[cfg(target_os = "macos")]
-    pub fn from_keycode(code: i32) -> Self {
-        match code {
-            53 => Key::Escape,
-            12 => Key::Q,
-            36 => Key::Enter,
-            49 => Key::Space,
-            123 => Key::Left,
-            124 => Key::Right,
-            125 => Key::Down,
-            126 => Key::Up,
-            _ => Key::Other,
-        }
-    }
-
-    /// Win32 virtual-key codes.
-    #[cfg(not(target_os = "macos"))]
-    pub fn from_keycode(code: i32) -> Self {
-        match code {
-            0x1B => Key::Escape,
-            0x51 => Key::Q,
-            0x0D => Key::Enter,
-            0x20 => Key::Space,
-            0x25 => Key::Left,
-            0x27 => Key::Right,
-            0x28 => Key::Down,
-            0x26 => Key::Up,
-            _ => Key::Other,
-        }
+    /// Named because winit is now the only source of modifiers.
+    pub fn new(cmd: bool, shift: bool, ctrl: bool, alt: bool) -> Self {
+        Self { cmd, shift, ctrl, alt }
     }
 }

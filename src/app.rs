@@ -111,7 +111,8 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(canvas: Canvas) -> Self {
+    pub fn new(w: i32, h: i32) -> Self {
+        let canvas = Canvas::new(w, h);
         let music = music_dir();
         let tracks = library::scan(&music);
         let items = tracks
@@ -153,9 +154,9 @@ impl App {
         app
     }
 
-    /// Shell handed us a new surface; keep geometry on-canvas.
-    pub fn resize(&mut self, canvas: Canvas) {
-        self.canvas = canvas;
+    /// New window size: reallocate the surface and keep geometry on-canvas.
+    pub fn resize(&mut self, w: i32, h: i32) {
+        self.canvas = Canvas::new(w, h);
         self.layout();
     }
 
