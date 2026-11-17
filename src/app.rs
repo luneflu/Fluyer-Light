@@ -3,17 +3,17 @@
 use crate::audio;
 use crate::buttons;
 use crate::font;
-use crate::gfx::{grey, Color, Canvas, Rect};
+use crate::gfx::{grey, rgb, Color, Canvas, Rect};
 use crate::input::{Event, Key};
 use crate::library;
 use crate::widget::{Button, Item, List};
 
 pub const BG: Color = grey(0x18); // 24,24,24
 pub const FG: Color = grey(0xF0); // 240,240,240
-const ROW_BG: Color = grey(0x20);
-const ROW_ALT: Color = grey(0x24);
-const SEL_BG: Color = grey(0x40);
 const BAR_BG: Color = grey(0x1C);
+
+/// List row ink: the dark bevel brown of the item art, not the chrome FG.
+const ITEM_FG: Color = rgb(0x50, 0x22, 0x05);
 const TRACK_BG: Color = grey(0x30);
 
 /// Library root. Windows has no fixed user path, so derive it from the profile
@@ -128,13 +128,10 @@ impl App {
                 items,
                 scale: SCALE,
                 pad_x: 8,
-                pad_y: 4,
-                gap: 0,
-                bg: ROW_BG,
-                alt_bg: ROW_ALT,
-                sel_bg: SEL_BG,
-                fg: FG,
-                sel_fg: FG,
+                pad_y: (buttons::MUSIC_ITEM_H - font::LINE_HEIGHT) * SCALE / 2, // art height
+                gap: 2,
+                fg: ITEM_FG,
+                sel_fg: ITEM_FG,
                 selected: if tracks.is_empty() { None } else { Some(0) },
                 scroll: 0,
                 view_h: 0,

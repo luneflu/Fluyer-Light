@@ -173,4 +173,45 @@ impl Canvas {
             }
         }
     }
+
+    /// Horizontal 3-slice: fixed left/right tiles, middle tile repeated to fill `w`.
+    /// Tiles are `tw`x`th` each, drawn at `scale`; 0 means transparent.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_sliced(
+        &mut self,
+        left: &[u32],
+        mid: &[u32],
+        right: &[u32],
+        tw: i32,
+        th: i32,
+        at: (i32, i32),
+        w: i32,
+        scale: i32,
+    ) {
+        let scale = scale.max(1);
+        let cap = (tw * scale).min(w / 2);
+        for sy in 0..th {
+            for xs in 0..w {
+                let (tile, sx) = if xs < cap {
+                    (left, xs / scale)
+                } else if xs >= w - cap {
+                    (right, (xs - (w - cap)) / scale)
+                } else {
+                    (mid, ((xs - cap) / scale) % tw)
+                };
+                let px = tile[(sy * tw + sx.min(tw - 1)) as usize];
+                if px == 0 {
+                    continue;
+                }
+                for dy in 0..scale {
+                    let dx = at.0 + xs;
+                    let dy = at.1 + sy * scale + dy;
+                    if dx < 0 || dx >= self.w || dy < 0 || dy >= self.h {
+                        continue;
+                    }
+                    self.row(dy)[dx as usize] = px;
+                }
+            }
+        }
+    }
 }

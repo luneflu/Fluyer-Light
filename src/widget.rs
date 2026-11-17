@@ -1,7 +1,11 @@
 // widget: retained widgets drawn into the canvas. Position is absolute design px.
 
+use crate::buttons;
 use crate::font;
 use crate::gfx::{Canvas, Color, Rect};
+
+/// Accent for the selected row: the light bevel colour of the item art.
+const SEL_BAR: Color = 0xFFE4_9C6F;
 
 #[derive(Clone, Copy)]
 pub struct Button {
@@ -87,9 +91,6 @@ pub struct List {
     pub pad_x: i32,
     pub pad_y: i32,
     pub gap: i32,
-    pub bg: Color,
-    pub alt_bg: Color,
-    pub sel_bg: Color,
     pub fg: Color,
     pub sel_fg: Color,
     pub selected: Option<usize>,
@@ -178,22 +179,29 @@ impl List {
                 break;
             }
             let sel = self.selected == Some(i);
-            c.fill(
-                r,
-                if sel {
-                    self.sel_bg
-                } else if i % 2 == 1 {
-                    self.alt_bg
-                } else {
-                    self.bg
-                },
+            let t = (buttons::MUSIC_ITEM_W * buttons::MUSIC_ITEM_H) as usize;
+            let art = &buttons::MUSIC_ITEM;
+            c.blit_sliced(
+                &art[0..t],
+                &art[t..2 * t],
+                &art[2 * t..3 * t],
+                buttons::MUSIC_ITEM_W,
+                buttons::MUSIC_ITEM_H,
+                // vertically centred in the row, whatever pad_y is
+                (r.x, r.y + (r.h - buttons::MUSIC_ITEM_H * self.scale) / 2),
+                r.w,
+                self.scale,
             );
+            if sel {
+                // no selected art yet: a hot left accent reads as focus
+                c.fill(Rect::new(r.x + 2 * self.scale, r.y, self.scale, r.h), SEL_BAR);
+            }
             let fg = if sel { self.sel_fg } else { self.fg };
             let ink = font::ink_bounds(&item.label, self.scale);
             font::draw(
                 c,
                 &item.label,
-                r.x + self.pad_x,
+                r.x + (r.w - ink.w) / 2 - ink.x, // centred in the item, by ink
                 r.y + (r.h - ink.h) / 2 - ink.y,
                 self.scale,
                 fg,
