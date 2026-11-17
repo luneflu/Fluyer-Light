@@ -42,22 +42,19 @@ impl Rect {
     }
 }
 
-pub struct Canvas {
+/// A view over the window's pixels: draw straight into softbuffer's buffer,
+/// so there is no extra full-screen copy or second allocation.
+pub struct Canvas<'a> {
     w: i32,
     h: i32,
-    px: Vec<u32>, // w * h, row-major
+    px: &'a mut [u32], // w * h, row-major
     dirty: Rect,
 }
 
-impl Canvas {
-    pub fn new(w: i32, h: i32) -> Self {
-        let (w, h) = (w.max(1), h.max(1));
-        Self { w, h, px: vec![0; (w * h) as usize], dirty: Rect::default() }
-    }
-
-    /// Pixels as 0xAARRGGBB, ready to hand to a 0RGB window buffer.
-    pub fn pixels(&self) -> &[u32] {
-        &self.px
+impl<'a> Canvas<'a> {
+    /// `px` must hold at least `w * h` pixels; the window buffer always does.
+    pub fn new(px: &'a mut [u32], w: i32, h: i32) -> Self {
+        Self { w, h, px, dirty: Rect::default() }
     }
 
     pub fn w(&self) -> i32 {
@@ -68,6 +65,10 @@ impl Canvas {
         self.h
     }
 
+    pub fn dirty(&self) -> Rect {
+        self.dirty
+    }
+
     #[allow(dead_code)] // for partial redraws; app.draw currently marks all
     pub fn mark(&mut self, r: Rect) {
         self.dirty = self.dirty.union(self.clip(r));
@@ -75,11 +76,6 @@ impl Canvas {
 
     pub fn mark_all(&mut self) {
         self.dirty = self.dirty.union(Rect::new(0, 0, self.w, self.h));
-    }
-
-    #[allow(dead_code)]
-    pub fn dirty(&self) -> Rect {
-        self.dirty
     }
 
     pub fn take_dirty(&mut self) -> Rect {

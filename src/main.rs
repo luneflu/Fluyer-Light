@@ -1,5 +1,6 @@
 // main: winit window + softbuffer present. The shell only allocates the window
-// and forwards keys/points; Canvas owns the pixels and is copied out on present.
+// and forwards keys/points; Canvas draws straight into softbuffer's buffer, so a
+// frame costs one present and no extra full-screen copy.
 
 mod app;
 mod audio;
@@ -23,6 +24,7 @@ use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use app::{App, Outcome};
+use gfx::Canvas;
 use input::{Event, Key, Mods};
 
 const W: u32 = 800;
@@ -33,35 +35,32 @@ struct Shell {
     window: Rc<Window>,
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     app: App,
+    size: (i32, i32),   // physical px, matches the surface
     cursor: (f64, f64), // logical px
     mods: ModifiersState,
     last_tick: Instant,
 }
 
 impl Shell {
-    fn present(&mut self) {
-        self.app.draw();
-        if self.app.canvas.take_dirty().w <= 0 {
-            return;
-        }
-        let size = self.window.inner_size();
-        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
-            return;
-        };
+    fn present(&mut self, full: bool) {
         let Ok(mut buf) = self.surface.buffer_mut() else { return };
-        // The canvas is the same size as the window, so this is one memcpy.
-        let px = self.app.canvas.pixels();
-        if buf.len() == px.len() {
-            buf.copy_from_slice(px);
+        let (w, h) = self.size;
+        let mut c = Canvas::new(&mut buf, w, h);
+        if full {
+            self.app.draw(&mut c);
+        } else {
+            self.app.draw_progress(&mut c);
         }
-        let _ = buf.present();
-        let _ = (w, h);
+        if c.dirty().w > 0 {
+            let _ = buf.present();
+        }
     }
 
     fn dispatch(&mut self, ev: Event) {
         match self.app.handle(ev) {
             Outcome::Quit => std::process::exit(0),
-            Outcome::Redraw => self.present(),
+            Outcome::Redraw => self.present(true),
+            Outcome::Repaint(full) => self.present(full),
             Outcome::Idle => {}
         }
     }
@@ -73,8 +72,9 @@ impl Shell {
         if self.surface.resize(w, h).is_err() {
             return;
         }
-        self.app.resize(w.get() as i32, h.get() as i32);
-        self.present();
+        self.size = (w.get() as i32, h.get() as i32);
+        self.app.resize(self.size.0, self.size.1);
+        self.present(true);
     }
 }
 
@@ -130,6 +130,7 @@ impl ApplicationHandler for Handler {
             window,
             surface,
             app: App::new(size.width as i32, size.height as i32),
+            size: (size.width as i32, size.height as i32),
             cursor: (0.0, 0.0),
             mods: ModifiersState::empty(),
             last_tick: Instant::now(),
@@ -143,7 +144,7 @@ impl ApplicationHandler for Handler {
         match event {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::Resized(size) => sh.resize(size),
-            WindowEvent::RedrawRequested => sh.present(),
+            WindowEvent::RedrawRequested => sh.present(true),
             WindowEvent::ModifiersChanged(m) => sh.mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
                 let s = sh.window.scale_factor();

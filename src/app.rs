@@ -47,7 +47,8 @@ const BAR_H: i32 = PAD + SEEK_H + GAP + ICON + PAD;
 
 pub enum Outcome {
     Idle,
-    Redraw,
+    Redraw,        // chrome changed: full repaint
+    Repaint(bool), // tick: true = full repaint, false = seek bar strip only
     Quit,
 }
 
@@ -97,7 +98,8 @@ fn button(label: &'static str) -> Button {
 }
 
 pub struct App {
-    pub canvas: Canvas,
+    w: i32, // window size, design px
+    h: i32,
     list: List,
     tracks: Vec<String>, // full path per row, same order as list.items
     play: Button,
@@ -106,13 +108,13 @@ pub struct App {
     seek: Rect,   // seek track rect, design space
     playing: bool,
     press: Hit, // held control: draws its clicked frame
+    bar_px: i32, // last drawn progress width, so idle ticks cost nothing
     current: Option<usize>,   // index of the loaded/playing track, not the list cursor
     inset: i32,               // titlebar height to keep clear (traffic lights live there)
 }
 
 impl App {
     pub fn new(w: i32, h: i32) -> Self {
-        let canvas = Canvas::new(w, h);
         let music = music_dir();
         let tracks = library::scan(&music);
         let items = tracks
@@ -121,7 +123,8 @@ impl App {
             .collect();
         println!("{} audio files in {music}", tracks.len());
         let mut app = Self {
-            canvas,
+            w,
+            h,
             list: List {
                 x: 0,
                 y: 0,
@@ -144,6 +147,7 @@ impl App {
             seek: Rect::new(0, 0, 0, 0),
             playing: false,
             press: Hit::None,
+            bar_px: 0,
             current: None,
             inset: 0,
         };
@@ -154,9 +158,10 @@ impl App {
         app
     }
 
-    /// New window size: reallocate the surface and keep geometry on-canvas.
+    /// New window size: keep geometry on-canvas.
     pub fn resize(&mut self, w: i32, h: i32) {
-        self.canvas = Canvas::new(w, h);
+        self.w = w;
+        self.h = h;
         self.layout();
     }
 
@@ -169,7 +174,7 @@ impl App {
     }
 
     fn layout(&mut self) {
-        let (w, h) = (self.canvas.w(), self.canvas.h());
+        let (w, h) = (self.w, self.h);
         self.list.y = self.inset;
         self.list.view_h = (h - BAR_H - self.inset).max(0);
         if let Some(i) = self.list.selected {
@@ -207,12 +212,16 @@ impl App {
                 _ => Outcome::Idle,
             },
             Event::Tick => {
-                self.playing = audio::is_playing();
-                if self.playing {
-                    Outcome::Redraw
-                } else {
-                    Outcome::Idle
+                let playing = audio::is_playing();
+                // Quantise to 2 design px: fewer presents, still smooth.
+                let px = if playing { self.progress_px() / 2 } else { 0 };
+                if playing == self.playing && px == self.bar_px {
+                    return Outcome::Idle;
                 }
+                let relayout = playing != self.playing;
+                self.playing = playing;
+                self.bar_px = px;
+                Outcome::Repaint(relayout)
             }
             Event::MouseDown { x, y } => {
                 if self.play.contains(x, y) {
@@ -233,7 +242,7 @@ impl App {
                     audio::seek(f * len);
                     return Outcome::Redraw;
                 }
-                if let Some(i) = self.list.hit(x, y, self.canvas.w()) {
+                if let Some(i) = self.list.hit(x, y, self.w) {
                     self.list.selected = Some(i);
                     return self.play_selected();
                 }
@@ -260,7 +269,7 @@ impl App {
             return Outcome::Idle;
         }
         self.list.selected = Some(next as usize);
-        self.list.ensure_visible(next as usize, self.canvas.h());
+        self.list.ensure_visible(next as usize, self.h);
         Outcome::Redraw
     }
 
@@ -273,7 +282,7 @@ impl App {
         let cur = self.current.or(self.list.selected).unwrap_or(0) as i32;
         let next = (cur + d).clamp(0, n as i32 - 1);
         self.list.selected = Some(next as usize);
-        self.list.ensure_visible(next as usize, self.canvas.h());
+        self.list.ensure_visible(next as usize, self.h);
         self.play_selected()
     }
 
@@ -300,50 +309,62 @@ impl App {
     }
 
     /// Full redraw into the canvas: clear, then draw retained elements.
-    pub fn draw(&mut self) {
-        self.canvas.clear(BG);
-        self.list.draw(&mut self.canvas);
+    pub fn draw(&mut self, c: &mut Canvas) {
+        c.clear(BG);
+        self.list.draw(c);
 
-        let (w, h) = (self.canvas.w(), self.canvas.h());
-        self.canvas.fill(Rect::new(0, h - BAR_H, w, BAR_H), BAR_BG);
+        let (w, h) = (self.w, self.h);
+        c.fill(Rect::new(0, h - BAR_H, w, BAR_H), BAR_BG);
 
         // Track name, clipped to the room left of the buttons.
         if let Some(path) = self.current.and_then(|i| self.tracks.get(i)) {
             let room = self.name_room();
             let name = fit(library::label(path), room, SCALE);
             let ink = font::ink_bounds(&name, SCALE);
-            font::draw(
-                &mut self.canvas,
-                &name,
-                PAD,
-                self.play.y + (ICON - ink.h) / 2 - ink.y,
-                SCALE,
-                FG,
-            );
+            font::draw(c, &name, PAD, self.play.y + (ICON - ink.h) / 2 - ink.y, SCALE, FG);
         }
 
         let down = |hit: Hit| (self.press == hit) as usize;
-        ctrl(&mut self.canvas, &self.prev, F_PREV + down(Hit::Prev));
+        ctrl(c, &self.prev, F_PREV + down(Hit::Prev));
         ctrl(
-            &mut self.canvas,
+            c,
             &self.play,
             if self.playing { F_PAUSE } else { F_PLAY } + down(Hit::Play),
         );
-        ctrl(&mut self.canvas, &self.next, F_NEXT + down(Hit::Next));
+        ctrl(c, &self.next, F_NEXT + down(Hit::Next));
 
         // Seek track + progress.
         if self.seek.w > 0 {
-            self.canvas.fill(self.seek, TRACK_BG);
-            let (pos, len) = audio::progress();
-            if len > 0.0 {
-                let f = (pos / len).clamp(0.0, 1.0);
-                let wpx = (f * self.seek.w as f64) as i32;
-                if wpx > 0 {
-                    self.canvas.fill(Rect::new(self.seek.x, self.seek.y, wpx, self.seek.h), FG);
-                }
+            let wpx = self.progress_px();
+            c.fill(self.seek, TRACK_BG);
+            if wpx > 0 {
+                c.fill(Rect::new(self.seek.x, self.seek.y, wpx, self.seek.h), FG);
             }
         }
-        self.canvas.mark_all();
+        c.mark_all();
+    }
+
+    /// Seek track + progress only. Everything else in the buffer is untouched, so
+    /// a playing tick costs one strip instead of a full-screen repaint.
+    pub fn draw_progress(&mut self, c: &mut Canvas) {
+        if self.seek.w <= 0 {
+            return;
+        }
+        let wpx = self.progress_px();
+        c.fill(self.seek, TRACK_BG);
+        if wpx > 0 {
+            c.fill(Rect::new(self.seek.x, self.seek.y, wpx, self.seek.h), FG);
+        }
+        c.mark(self.seek);
+    }
+
+    /// Progress bar width in px, 0 when nothing is loaded.
+    fn progress_px(&self) -> i32 {
+        let (pos, len) = audio::progress();
+        if len <= 0.0 || self.seek.w <= 0 {
+            return 0;
+        }
+        ((pos / len).clamp(0.0, 1.0) * self.seek.w as f64) as i32
     }
 }
 
