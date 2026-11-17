@@ -1,6 +1,6 @@
-// main: winit window + softbuffer present. The shell only allocates the window
-// and forwards keys/points; Canvas draws straight into softbuffer's buffer, so a
-// frame costs one present and no extra full-screen copy.
+// main: winit window + softbuffer present. softbuffer's per-frame buffer contents
+// are unspecified (macOS hands back a fresh, zeroed one), so the app keeps its own
+// canonical frame and copies it in on present. Partial repaints stay cheap.
 
 mod app;
 mod audio;
@@ -35,6 +35,7 @@ struct Shell {
     window: Rc<Window>,
     surface: softbuffer::Surface<Rc<Window>, Rc<Window>>,
     app: App,
+    frame: Vec<u32>, // canonical pixels; softbuffer's buffer is not persistent
     size: (i32, i32),   // physical px, matches the surface
     cursor: (f64, f64), // logical px
     mods: ModifiersState,
@@ -43,17 +44,24 @@ struct Shell {
 
 impl Shell {
     fn present(&mut self, full: bool) {
-        let Ok(mut buf) = self.surface.buffer_mut() else { return };
         let (w, h) = self.size;
-        let mut c = Canvas::new(&mut buf, w, h);
-        if full {
-            self.app.draw(&mut c);
-        } else {
-            self.app.draw_progress(&mut c);
+        let n = (w * h) as usize;
+        let dirty = {
+            let Shell { app, frame, .. } = self;
+            let mut c = Canvas::new(&mut frame[..n], w, h);
+            if full {
+                app.draw(&mut c);
+            } else {
+                app.draw_progress(&mut c);
+            }
+            c.dirty()
+        };
+        if dirty.w == 0 || dirty.h == 0 {
+            return;
         }
-        if c.dirty().w > 0 {
-            let _ = buf.present();
-        }
+        let Ok(mut buf) = self.surface.buffer_mut() else { return };
+        buf.copy_from_slice(&self.frame[..n]);
+        let _ = buf.present();
     }
 
     fn dispatch(&mut self, ev: Event) {
@@ -73,6 +81,7 @@ impl Shell {
             return;
         }
         self.size = (w.get() as i32, h.get() as i32);
+        self.frame.resize((self.size.0 * self.size.1) as usize, 0);
         self.app.resize(self.size.0, self.size.1);
         self.present(true);
     }
@@ -130,6 +139,7 @@ impl ApplicationHandler for Handler {
             window,
             surface,
             app: App::new(size.width as i32, size.height as i32),
+            frame: vec![0; (size.width * size.height) as usize],
             size: (size.width as i32, size.height as i32),
             cursor: (0.0, 0.0),
             mods: ModifiersState::empty(),
@@ -147,8 +157,9 @@ impl ApplicationHandler for Handler {
             WindowEvent::RedrawRequested => sh.present(true),
             WindowEvent::ModifiersChanged(m) => sh.mods = m.state(),
             WindowEvent::CursorMoved { position, .. } => {
+                // Canvas is in physical pixels, so scale the logical cursor up.
                 let s = sh.window.scale_factor();
-                sh.cursor = (position.x / s, position.y / s);
+                sh.cursor = (position.x * s, position.y * s);
             }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => match state {
                 ElementState::Pressed => {
