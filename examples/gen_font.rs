@@ -11,6 +11,12 @@ use ttf_parser::{Face, GlyphId, OutlineBuilder};
 
 const TTF: &str = "assets/fonts/Cairopixel.ttf";
 const OUT: &str = "src/font_atlas.rs";
+// Wood palette lifted from assets/buttons/controls.png.
+const WOOD_CORE: u32 = 0xFF50_2205;   // v1 body
+const WOOD_WALL: u32 = 0xFF50_2006;   // top/left edge inside the mask
+const WOOD_FLOOR: u32 = 0xFF6B_3411;  // recessed groove floor inside the mask
+const WOOD_LIP: u32 = 0xFFC1_7748;    // 1 px catchlight on the sunlit bottom/right lip
+
 const FIRST: u8 = 32;
 const LAST: u8 = 127;
 
@@ -122,7 +128,11 @@ fn inside(polys: &[Vec<(f32, f32)>], x: f32, y: f32) -> bool {
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let size: f32 = args.next().map(|s| s.parse().unwrap()).unwrap_or(16.0);
+    let size: f32 = args.next().map(|s| s.parse().unwrap()).unwrap_or(32.0);
+    let variant: u8 = args
+        .next()
+        .map(|s| s.trim_start_matches('v').parse().unwrap())
+        .unwrap_or(2);
 
     let data = fs::read(TTF).expect("read ttf");
     let face = Face::parse(&data, 0).expect("parse ttf");
@@ -133,6 +143,8 @@ fn main() {
 
     let mut bitmap: Vec<u8> = Vec::new();
     let mut glyphs: Vec<(i32, i32, i32, i32, i32, usize)> = Vec::new();
+    let mut shaded: Vec<u32> = Vec::new();
+    let mut sprites: Vec<(i32, i32, usize)> = Vec::new(); // (w, h, off) incl. bevel ring
     let mut partial = 0;
 
     for code in FIRST..LAST {
@@ -143,6 +155,7 @@ fn main() {
         let mut path = Path::new(scale, ascent as f32);
         if face.outline_glyph(gid, &mut path).is_none() {
             glyphs.push((adv, 0, 0, 0, 0, bitmap.len()));
+            sprites.push((0, 0, shaded.len()));
             continue;
         }
 
@@ -161,6 +174,7 @@ fn main() {
         }
         if !min_x.is_finite() {
             glyphs.push((adv, 0, 0, 0, 0, bitmap.len()));
+            sprites.push((0, 0, shaded.len()));
             continue;
         }
 
@@ -193,6 +207,68 @@ fn main() {
             }
         }
         glyphs.push((adv, x0, y0, w, h, off));
+
+        // Debossed stamp, matching the transport icons: the glyph stays solid dark and
+        // only the empty pixel to its right and below catches the light. At em 32 a
+        // stroke is 2 px and counters are >= 2 px, so the 1 px lip never bridges them.
+        let (sw, sh) = (w + 1, h + 1);
+        sprites.push((sw, sh, shaded.len()));
+        let ink = |xx: i32, yy: i32| -> bool {
+            xx >= 0 && yy >= 0 && xx < w && yy < h && bitmap[off + (yy * w + xx) as usize] != 0
+        };
+        // The lip may only sit on the glyph's outer silhouette: flood the empty cells
+        // reachable from the sprite border, so counters stay wood face and stay open.
+        let ext_w = (sw + 2) as usize;
+        let mut outside = vec![false; ext_w * (sh + 2) as usize];
+        let mut stack: Vec<(i32, i32)> = Vec::new();
+        for x in -1..=sw {
+            stack.push((x, -1));
+            stack.push((x, sh));
+        }
+        for y in -1..=sh {
+            stack.push((-1, y));
+            stack.push((sw, y));
+        }
+        while let Some((x, y)) = stack.pop() {
+            let (bx, by) = (x + 1, y + 1);
+            let i = by as usize * ext_w + bx as usize;
+            if x < -1 || y < -1 || x > sw || y > sh || outside[i] {
+                continue;
+            }
+            if ink(x, y) {
+                continue;
+            }
+            outside[i] = true;
+            stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]);
+        }
+        let is_outside = |x: i32, y: i32| outside[(y + 1) as usize * ext_w + (x + 1) as usize];
+        for row in 0..=h {
+            for col in 0..=w {
+                // v1: flat body + 2-sided lip. v2/v3: shadow wall on the top/left edge of
+                // the mask, groove floor behind it; v3 adds a top-right stem glint.
+                let wall = variant >= 2 && ink(col, row) && (!ink(col - 1, row) || !ink(col, row - 1));
+                let lip = is_outside(col, row)
+                    && match variant {
+                        1 => ink(col - 1, row) || ink(col, row - 1),
+                        2 => ink(col, row - 1),
+                        _ => ink(col, row - 1) || (ink(col - 1, row) && !ink(col - 1, row - 1)),
+                    };
+                let px = if ink(col, row) {
+                    if wall {
+                        WOOD_WALL
+                    } else if variant >= 2 {
+                        WOOD_FLOOR
+                    } else {
+                        WOOD_CORE
+                    }
+                } else if lip {
+                    WOOD_LIP
+                } else {
+                    0
+                };
+                shaded.push(px);
+            }
+        }
     }
 
     if partial > 0 {
@@ -208,12 +284,16 @@ fn main() {
     s.push_str("\n#[derive(Clone, Copy)]\npub struct Glyph {\n");
     s.push_str("    pub adv: i8,   // pen advance\n    pub x0: i8,    // left bearing from pen\n");
     s.push_str("    pub y0: i8,    // top from ascender line\n    pub w: u8,\n    pub h: u8,\n");
-    s.push_str("    pub off: u32,  // index into BITMAP\n}\n\n");
+    s.push_str("    pub off: u32,  // index into BITMAP\n");
+    s.push_str("    pub sw: u8,    // beveled sprite size (w+2, h+2), includes the ring\n");
+    s.push_str("    pub sh: u8,\n    pub soff: u32, // index into SHADED\n}\n\n");
     let _ = writeln!(s, "pub const GLYPHS: [Glyph; {}] = [", glyphs.len());
-    for (adv, x0, y0, w, h, off) in &glyphs {
+    for (i, (adv, x0, y0, w, h, off)) in glyphs.iter().enumerate() {
+        let (sw, sh, soff) = sprites[i];
         let _ = writeln!(
             s,
-            "    Glyph {{ adv: {adv}, x0: {x0}, y0: {y0}, w: {w}, h: {h}, off: {off} }},"
+            "    Glyph {{ adv: {adv}, x0: {x0}, y0: {y0}, w: {w}, h: {h}, off: {off}, \
+             sw: {sw}, sh: {sh}, soff: {soff} }},"
         );
     }
     s.push_str("];\n\n");
@@ -228,8 +308,19 @@ fn main() {
         }
         s.push_str(",\n");
     }
+    s.push_str("];\n\n");
+    let _ = writeln!(s, "pub const SHADED: [u32; {}] = [", shaded.len());
+    for chunk in shaded.chunks(12) {
+        s.push_str("    ");
+        for (i, px) in chunk.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            let _ = write!(s, "0x{px:08X}");
+        }
+        s.push_str(",\n");
+    }
     s.push_str("];\n");
-
 
     fs::write(OUT, s).expect("write atlas");
     println!(

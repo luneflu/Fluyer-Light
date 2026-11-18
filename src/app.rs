@@ -12,7 +12,7 @@ pub const BG: Color = grey(0x18); // 24,24,24
 pub const FG: Color = grey(0xF0); // 240,240,240
 const BAR_BG: Color = grey(0x1C);
 
-/// List row ink: the dark bevel brown of the item art, not the chrome FG.
+/// List row ink: the item art's wood ramp, dark top-left to lit bottom-right.
 const ITEM_FG: Color = rgb(0x50, 0x22, 0x05);
 const TRACK_BG: Color = grey(0x30);
 
@@ -34,14 +34,14 @@ fn music_dir() -> String {
     // }
     "E:\\Music".to_string()
 }
-const SCALE: i32 = 4;
+const SCALE: i32 = 3; // em 32 atlas x2 == the old em16 x4 (64 device px)
 const PAD: i32 = 8;
 
 // Bottom bar: seek track on top, then name + transport row.
-const NAME_H: i32 = 15 * SCALE; // one line of text
+const NAME_H: i32 = font::LINE_HEIGHT * SCALE; // one line of text
 const SEEK_H: i32 = 8 * SCALE;
 const GAP: i32 = 8;
-const EM: i32 = 16;              // baked font em; play/pause is one em square
+const EM: i32 = crate::font_atlas::SIZE; // baked em; play/pause is one em square
 const ICON: i32 = EM * SCALE;
 const BAR_H: i32 = PAD + SEEK_H + GAP + ICON + PAD;
 

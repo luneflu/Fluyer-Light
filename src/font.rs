@@ -1,6 +1,6 @@
 // font: draws the baked Cairopixel atlas (src/font_atlas.rs) as integer-scaled pixel rects.
 
-use crate::font_atlas::{ASCENT, BITMAP, DESCENT, FIRST, GLYPHS};
+use crate::font_atlas::{ASCENT, BITMAP, DESCENT, FIRST, GLYPHS, SHADED};
 use crate::gfx::{Canvas, Color, Rect};
 
 #[allow(dead_code)]
@@ -45,6 +45,27 @@ pub fn ink_bounds(text: &str, scale: i32) -> Rect {
 }
 
 /// `y` is the ascender line (top of the line box), not the glyph top.
+/// Wood text: pre-baked bevel sprites (mask grown by one pixel, ring coloured by
+/// which side of the glyph it sits on). No runtime shading, no atlas maths.
+pub fn draw_wood(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32) {
+    let mut pen = x;
+    for c in text.chars() {
+        let g = glyph(c);
+        if g.sw > 0 {
+            let (sw, sh) = (g.sw as i32, g.sh as i32);
+            let sprite = &SHADED[g.soff as usize..(g.soff as usize + (sw * sh) as usize)];
+            canvas.blit_masked(
+                sprite,
+                sw,
+                sh,
+                (pen + g.x0 as i32 * scale, y + g.y0 as i32 * scale),
+                scale,
+            );
+        }
+        pen += g.adv as i32 * scale;
+    }
+}
+
 pub fn draw(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32, color: Color) {
     let mut pen = x;
     for c in text.chars() {

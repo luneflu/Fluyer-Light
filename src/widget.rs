@@ -196,15 +196,13 @@ impl List {
                 // no selected art yet: a hot left accent reads as focus
                 c.fill(Rect::new(r.x + 2 * self.scale, r.y, self.scale, r.h), SEL_BAR);
             }
-            let fg = if sel { self.sel_fg } else { self.fg };
             let ink = font::ink_bounds(&item.label, self.scale);
-            font::draw(
+            font::draw_wood(
                 c,
                 &item.label,
                 r.x + (r.w - ink.w) / 2 - ink.x, // centred in the item, by ink
                 r.y + (r.h - ink.h) / 2 - ink.y,
                 self.scale,
-                fg,
             );
         }
     }
