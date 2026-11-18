@@ -47,14 +47,21 @@ impl Rect {
 pub struct Canvas<'a> {
     w: i32,
     h: i32,
-    px: &'a mut [u32], // w * h, row-major
+    stride: i32,       // pixels per row in the backing store (>= w)
+    px: &'a mut [u32], // stride * h, row-major
     dirty: Rect,
 }
 
 impl<'a> Canvas<'a> {
     /// `px` must hold at least `w * h` pixels; the window buffer always does.
     pub fn new(px: &'a mut [u32], w: i32, h: i32) -> Self {
-        Self { w, h, px, dirty: Rect::default() }
+        Self { w, h, stride: w, px, dirty: Rect::default() }
+    }
+
+    /// Backing store with row padding (IOSurface, whose rows are cap-width).
+    /// SAFETY: `px` must cover `stride * h` pixels for the canvas lifetime.
+    pub unsafe fn with_stride(px: &'a mut [u32], w: i32, h: i32, stride: i32) -> Self {
+        Self { w, h, stride: stride.max(w), px, dirty: Rect::default() }
     }
 
     pub fn w(&self) -> i32 {
@@ -91,8 +98,9 @@ impl<'a> Canvas<'a> {
     }
 
     fn row(&mut self, y: i32) -> &mut [u32] {
-        let w = self.w as usize;
-        &mut self.px[y as usize * w..(y as usize + 1) * w]
+        let (w, s) = (self.w as usize, self.stride as usize);
+        let start = y as usize * s;
+        &mut self.px[start..start + w]
     }
 
     /// Solid fill. One `fill` per row; fully transparent colour is a no-op.
