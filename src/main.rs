@@ -67,6 +67,7 @@ struct Shell {
     cursor: (f64, f64), // logical px
     mods: ModifiersState,
     last_tick: Instant,
+    early_frames: u8, // the window can be shown after our first present
 }
 
 impl Shell {
@@ -121,8 +122,15 @@ impl Shell {
             return;
         };
         #[cfg(target_os = "macos")]
-        if unsafe { flp_resize(w.get() as c_int, h.get() as c_int) } == 0 {
-            return;
+        {
+            // Live resize fires this constantly; skip the surface swap when nothing
+            // changed, and let contentsGravity stretch the old frame in the meantime.
+            if (w.get() as i32, h.get() as i32) == self.size {
+                return;
+            }
+            if unsafe { flp_resize(w.get() as c_int, h.get() as c_int) } == 0 {
+                return;
+            }
         }
         #[cfg(not(target_os = "macos"))]
         if self.surface.resize(w, h).is_err() {
@@ -218,6 +226,7 @@ impl ApplicationHandler for Handler {
             cursor: (0.0, 0.0),
             mods: ModifiersState::empty(),
             last_tick: Instant::now(),
+            early_frames: 4,
         };
         sh.resize(size);
         self.shell = Some(sh);
@@ -263,6 +272,12 @@ impl ApplicationHandler for Handler {
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
         if let Some(sh) = self.shell.as_mut() {
+            if sh.early_frames > 0 {
+                // Window can come on screen after the first present; repaint a few
+                // times so the first paint is never lost.
+                sh.early_frames -= 1;
+                sh.present();
+            }
             if sh.last_tick.elapsed() >= TICK {
                 sh.last_tick = Instant::now();
                 sh.dispatch(Event::Tick);
