@@ -34,7 +34,8 @@ fn music_dir() -> String {
     // }
     "E:\\Music".to_string()
 }
-const SCALE: i32 = 3; // em 32 atlas x2 == the old em16 x4 (64 device px)
+const SCALE: i32 = 1; // text on the art grid: 1 mask px = ART device px = 6
+const ART: i32 = 3;   // sprites: 16 px art x 3 = 48 device px (the look you liked)
 const PAD: i32 = 8;
 
 // Bottom bar: seek track on top, then name + transport row.
@@ -42,7 +43,9 @@ const NAME_H: i32 = font::LINE_HEIGHT * SCALE; // one line of text
 const SEEK_H: i32 = 8 * SCALE;
 const GAP: i32 = 8;
 const EM: i32 = crate::font_atlas::SIZE; // baked em; play/pause is one em square
-const ICON: i32 = EM * SCALE;
+// Transport buttons are the 16 px control art at ART scale: 48 device px, one art px
+// per 3 device px. (EM is the font em, not the art tile, so it must not be used here.)
+const ICON: i32 = buttons::CONTROLS_H * ART;
 const BAR_H: i32 = PAD + SEEK_H + GAP + ICON + PAD;
 
 pub enum Outcome {
@@ -131,9 +134,11 @@ impl App {
                 w: 0,
                 items,
                 scale: SCALE,
-                pad_x: 8,
-                pad_y: (buttons::MUSIC_ITEM_H - font::LINE_HEIGHT) * SCALE / 2, // art height
-                gap: 2,
+                art_scale: ART,
+                pad_x: 24,
+                pad_y: 12,
+                // pad_y: (buttons::MUSIC_ITEM_H - font::LINE_HEIGHT) * SCALE / 2, // art height
+                gap: 0,
                 fg: ITEM_FG,
                 sel_fg: ITEM_FG,
                 selected: if tracks.is_empty() { None } else { Some(0) },

@@ -1,3 +1,5 @@
 target
 src/font_atlas.rs
 src/buttons.rs
+**/.DS_Store
+**/._*

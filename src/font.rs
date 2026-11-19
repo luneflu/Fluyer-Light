@@ -58,7 +58,10 @@ pub fn draw_wood(canvas: &mut Canvas, text: &str, x: i32, y: i32, scale: i32) {
                 sprite,
                 sw,
                 sh,
-                (pen + g.x0 as i32 * scale, y + g.y0 as i32 * scale),
+                (
+                    pen + (g.x0 as i32 - g.pad_l as i32) * scale,
+                    y + (g.y0 as i32 - g.pad_t as i32) * scale,
+                ),
                 scale,
             );
         }

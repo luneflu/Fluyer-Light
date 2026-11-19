@@ -12,7 +12,7 @@ pub struct Button {
     pub x: i32, // top-left, design px
     pub y: i32,
     pub label: &'static str,
-    pub scale: i32,
+    pub scale: i32,     // text scale (font em x scale)
     pub pad_x: i32,
     pub pad_y: i32,
     pub bg: Color,
@@ -87,7 +87,8 @@ pub struct List {
     pub y: i32,
     pub w: i32, // <= 0: fill canvas width minus the left/right margin
     pub items: Vec<Item>,
-    pub scale: i32,
+    pub scale: i32,     // text scale (font em x scale)
+    pub art_scale: i32, // item sprite scale, independent of the text
     pub pad_x: i32,
     pub pad_y: i32,
     pub gap: i32,
@@ -124,23 +125,25 @@ impl List {
         self.scroll = self.scroll.min(self.items.len().saturating_sub(1));
     }
 
+    /// Row width: the list box minus pad_x on both sides (horizontal margin).
     pub fn width(&self, canvas_w: i32) -> i32 {
-        if self.w > 0 {
-            self.w
-        } else {
-            (canvas_w - 2 * self.x).max(0)
-        }
+        let box_w = if self.w > 0 { self.w } else { (canvas_w - 2 * self.x).max(0) };
+        (box_w - 2 * self.pad_x).max(0)
+    }
+
+    fn inner_x(&self) -> i32 {
+        self.x + self.pad_x
     }
 
     pub fn rect(&self, canvas_w: i32) -> Rect {
         let n = (self.items.len() - self.scroll.min(self.items.len())) as i32;
         let h = if n <= 0 { 0 } else { n * self.row_h() + (n - 1) * self.gap };
-        Rect::new(self.x, self.y, self.width(canvas_w), h)
+        Rect::new(self.inner_x(), self.y, self.width(canvas_w), h)
     }
 
     pub fn row(&self, i: usize, canvas_w: i32) -> Rect {
         Rect::new(
-            self.x,
+            self.inner_x(),
             self.y + (i - self.scroll) as i32 * self.stride(),
             self.width(canvas_w),
             self.row_h(),
@@ -150,7 +153,7 @@ impl List {
     /// Which row contains a design-space point (gap counts as dead space).
     pub fn hit(&self, px: i32, py: i32, canvas_w: i32) -> Option<usize> {
         let w = self.width(canvas_w);
-        if px < self.x || px >= self.x + w {
+        if px < self.inner_x() || px >= self.inner_x() + w {
             return None;
         }
         let dy = py - self.y;
@@ -179,22 +182,29 @@ impl List {
                 break;
             }
             let sel = self.selected == Some(i);
+            // 3x3 slice: three tiles are the left cap, middle and right cap; the top
+            // and bottom 8 art rows stay fixed, the band between them repeats.
             let t = (buttons::MUSIC_ITEM_W * buttons::MUSIC_ITEM_H) as usize;
             let art = &buttons::MUSIC_ITEM;
-            c.blit_sliced(
+            c.blit_9slice(
                 &art[0..t],
                 &art[t..2 * t],
                 &art[2 * t..3 * t],
                 buttons::MUSIC_ITEM_W,
                 buttons::MUSIC_ITEM_H,
-                // vertically centred in the row, whatever pad_y is
-                (r.x, r.y + (r.h - buttons::MUSIC_ITEM_H * self.scale) / 2),
+                8,
+                8,
+                (r.x, r.y),
                 r.w,
-                self.scale,
+                r.h,
+                self.art_scale,
             );
             if sel {
                 // no selected art yet: a hot left accent reads as focus
-                c.fill(Rect::new(r.x + 2 * self.scale, r.y, self.scale, r.h), SEL_BAR);
+                c.fill(
+                    Rect::new(r.x + 2 * self.art_scale, r.y, self.art_scale, r.h),
+                    SEL_BAR,
+                );
             }
             let ink = font::ink_bounds(&item.label, self.scale);
             font::draw_wood(

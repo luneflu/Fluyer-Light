@@ -177,6 +177,55 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    /// 3×3 slice from three tiles (left/mid/right caps) with fixed top/bottom bands.
+    /// Corners keep their art pixels, the middle band repeats, so the plank grows in
+    /// both axes without stretching its bevels.
+    #[allow(clippy::too_many_arguments)]
+    pub fn blit_9slice(
+        &mut self,
+        left: &[u32],
+        mid: &[u32],
+        right: &[u32],
+        tw: i32,
+        th: i32,
+        cap_t: i32,
+        cap_b: i32,
+        at: (i32, i32),
+        w: i32,
+        h: i32,
+        scale: i32,
+    ) {
+        let scale = scale.max(1);
+        let cap_x = (tw * scale).min(w / 2);
+        for ys in 0..h {
+            let sy = if ys < cap_t * scale {
+                ys / scale
+            } else if ys >= h - cap_b * scale {
+                th - 1 - (h - 1 - ys) / scale
+            } else {
+                cap_t // single flat interior row: repeating a band shows seams
+            };
+            for xs in 0..w {
+                let (tile, sx) = if xs < cap_x {
+                    (left, xs / scale)
+                } else if xs >= w - cap_x {
+                    (right, tw - 1 - (w - 1 - xs) / scale)
+                } else {
+                    (mid, (xs - cap_x) / scale % tw)
+                };
+                let px = tile[(sy.clamp(0, th - 1) * tw + sx.clamp(0, tw - 1)) as usize];
+                if px == 0 {
+                    continue;
+                }
+                let (dx, dy) = (at.0 + xs, at.1 + ys);
+                if dx < 0 || dx >= self.w || dy < 0 || dy >= self.h {
+                    continue;
+                }
+                self.row(dy)[dx as usize] = px;
+            }
+        }
+    }
+
     /// Horizontal 3-slice: fixed left/right tiles, middle tile repeated to fill `w`.
     /// Tiles are `tw`x`th` each, drawn at `scale`; 0 means transparent.
     #[allow(clippy::too_many_arguments)]

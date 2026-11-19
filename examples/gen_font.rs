@@ -13,9 +13,11 @@ const TTF: &str = "assets/fonts/Cairopixel.ttf";
 const OUT: &str = "src/font_atlas.rs";
 // Wood palette lifted from assets/buttons/controls.png.
 const WOOD_CORE: u32 = 0xFF50_2205;   // v1 body
-const WOOD_WALL: u32 = 0xFF50_2006;   // top/left edge inside the mask
+const WOOD_WALL: u32 = 0xFF50_2205;   // top/left edge inside the mask
 const WOOD_FLOOR: u32 = 0xFF6B_3411;  // recessed groove floor inside the mask
 const WOOD_LIP: u32 = 0xFFC1_7748;    // 1 px catchlight on the sunlit bottom/right lip
+const WOOD_HI: u32 = 0xFFC1_7748;     // lit lip
+const WOOD_MID: u32 = 0xFF6C_320F;    // groove floor between wall and lip
 
 const FIRST: u8 = 32;
 const LAST: u8 = 127;
@@ -144,7 +146,7 @@ fn main() {
     let mut bitmap: Vec<u8> = Vec::new();
     let mut glyphs: Vec<(i32, i32, i32, i32, i32, usize)> = Vec::new();
     let mut shaded: Vec<u32> = Vec::new();
-    let mut sprites: Vec<(i32, i32, usize)> = Vec::new(); // (w, h, off) incl. bevel ring
+    let mut sprites: Vec<(i32, i32, usize, i32, i32)> = Vec::new(); // (w, h, off, pad_l, pad_t)
     let mut partial = 0;
 
     for code in FIRST..LAST {
@@ -155,7 +157,7 @@ fn main() {
         let mut path = Path::new(scale, ascent as f32);
         if face.outline_glyph(gid, &mut path).is_none() {
             glyphs.push((adv, 0, 0, 0, 0, bitmap.len()));
-            sprites.push((0, 0, shaded.len()));
+            sprites.push((0, 0, shaded.len(), 0, 0));
             continue;
         }
 
@@ -174,7 +176,7 @@ fn main() {
         }
         if !min_x.is_finite() {
             glyphs.push((adv, 0, 0, 0, 0, bitmap.len()));
-            sprites.push((0, 0, shaded.len()));
+            sprites.push((0, 0, shaded.len(), 0, 0));
             continue;
         }
 
@@ -211,10 +213,12 @@ fn main() {
         // Debossed stamp, matching the transport icons: the glyph stays solid dark and
         // only the empty pixel to its right and below catches the light. At em 32 a
         // stroke is 2 px and counters are >= 2 px, so the 1 px lip never bridges them.
-        let (sw, sh) = (w + 1, h + 1);
-        sprites.push((sw, sh, shaded.len()));
+        let (pad_l, pad_t) = if variant >= 4 && variant <= 6 { (1, 1) } else { (0, 0) };
+        let (sw, sh) = (w + 1 + pad_l, h + 1 + pad_t);
+        sprites.push((sw, sh, shaded.len(), pad_l, pad_t));
         let ink = |xx: i32, yy: i32| -> bool {
-            xx >= 0 && yy >= 0 && xx < w && yy < h && bitmap[off + (yy * w + xx) as usize] != 0
+            let (mx, my) = (xx - pad_l, yy - pad_t);
+            mx >= 0 && my >= 0 && mx < w && my < h && bitmap[off + (my * w + mx) as usize] != 0
         };
         // The lip may only sit on the glyph's outer silhouette: flood the empty cells
         // reachable from the sprite border, so counters stay wood face and stay open.
@@ -242,29 +246,80 @@ fn main() {
             stack.extend([(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]);
         }
         let is_outside = |x: i32, y: i32| outside[(y + 1) as usize * ext_w + (x + 1) as usize];
-        for row in 0..=h {
-            for col in 0..=w {
+        for row in 0..sh {
+            for col in 0..sw {
                 // v1: flat body + 2-sided lip. v2/v3: shadow wall on the top/left edge of
                 // the mask, groove floor behind it; v3 adds a top-right stem glint.
-                let wall = variant >= 2 && ink(col, row) && (!ink(col - 1, row) || !ink(col, row - 1));
-                let lip = is_outside(col, row)
-                    && match variant {
-                        1 => ink(col - 1, row) || ink(col, row - 1),
-                        2 => ink(col, row - 1),
-                        _ => ink(col, row - 1) || (ink(col - 1, row) && !ink(col - 1, row - 1)),
-                    };
-                let px = if ink(col, row) {
-                    if wall {
+                let px = if variant >= 7 {
+                    // Three-role carve, all inside the mask: wall where plank is above or
+                    // left, lip where plank is below or right, floor between them.
+                    if !ink(col, row) {
+                        0
+                    } else if !ink(col, row - 1) || !ink(col - 1, row) {
                         WOOD_WALL
-                    } else if variant >= 2 {
-                        WOOD_FLOOR
+                    } else if !ink(col, row + 1) || !ink(col + 1, row) {
+                        WOOD_HI
                     } else {
-                        WOOD_CORE
+                        WOOD_MID
                     }
-                } else if lip {
-                    WOOD_LIP
+                } else if variant >= 6 {
+                    // Flat dark body + sunlit lip on the bottom/right only.
+                    if ink(col, row) {
+                        WOOD_WALL
+                    } else if is_outside(col, row) && (ink(col - 1, row) || ink(col, row - 1)) {
+                        WOOD_HI
+                    } else {
+                        0
+                    }
+                } else if variant >= 5 {
+                    // Light lettering with a dark 1 px outline on the silhouette.
+                    if ink(col, row) {
+                        WOOD_HI
+                    } else if is_outside(col, row)
+                        && (ink(col + 1, row)
+                            || ink(col - 1, row)
+                            || ink(col, row + 1)
+                            || ink(col, row - 1))
+                    {
+                        WOOD_WALL
+                    } else {
+                        0
+                    }
+                } else if variant >= 4 {
+                    // Balanced emboss: body flat, 1 px dark rim outside the top/left of
+                    // the silhouette, 1 px light rim outside the bottom/right. Rims only
+                    // on the outside so counters stay open.
+                    if ink(col, row) {
+                        WOOD_FLOOR
+                    } else if is_outside(col, row) && (ink(col + 1, row) || ink(col, row + 1)) {
+                        WOOD_WALL
+                    } else if is_outside(col, row) && (ink(col - 1, row) || ink(col, row - 1)) {
+                        WOOD_HI
+                    } else {
+                        0
+                    }
                 } else {
-                    0
+                    let wall =
+                        variant >= 2 && ink(col, row) && (!ink(col - 1, row) || !ink(col, row - 1));
+                    let lip = is_outside(col, row)
+                        && match variant {
+                            1 => ink(col - 1, row) || ink(col, row - 1),
+                            2 => ink(col, row - 1),
+                            _ => ink(col, row - 1) || (ink(col - 1, row) && !ink(col - 1, row - 1)),
+                        };
+                    if ink(col, row) {
+                        if wall {
+                            WOOD_WALL
+                        } else if variant >= 2 {
+                            WOOD_FLOOR
+                        } else {
+                            WOOD_CORE
+                        }
+                    } else if lip {
+                        WOOD_LIP
+                    } else {
+                        0
+                    }
                 };
                 shaded.push(px);
             }
@@ -286,14 +341,15 @@ fn main() {
     s.push_str("    pub y0: i8,    // top from ascender line\n    pub w: u8,\n    pub h: u8,\n");
     s.push_str("    pub off: u32,  // index into BITMAP\n");
     s.push_str("    pub sw: u8,    // beveled sprite size (w+2, h+2), includes the ring\n");
-    s.push_str("    pub sh: u8,\n    pub soff: u32, // index into SHADED\n}\n\n");
+    s.push_str("    pub sh: u8,\n    pub soff: u32, // index into SHADED\n");
+    s.push_str("    pub pad_l: i8, // sprite starts this far left of x0\n    pub pad_t: i8,\n}\n\n");
     let _ = writeln!(s, "pub const GLYPHS: [Glyph; {}] = [", glyphs.len());
     for (i, (adv, x0, y0, w, h, off)) in glyphs.iter().enumerate() {
-        let (sw, sh, soff) = sprites[i];
+        let (sw, sh, soff, pad_l, pad_t) = sprites[i];
         let _ = writeln!(
             s,
             "    Glyph {{ adv: {adv}, x0: {x0}, y0: {y0}, w: {w}, h: {h}, off: {off}, \
-             sw: {sw}, sh: {sh}, soff: {soff} }},"
+             sw: {sw}, sh: {sh}, soff: {soff}, pad_l: {pad_l}, pad_t: {pad_t} }},"
         );
     }
     s.push_str("];\n\n");
