@@ -9,8 +9,8 @@ use std::fs;
 
 use ttf_parser::{Face, GlyphId, OutlineBuilder};
 
-const TTF: &str = "assets/fonts/Cairopixel.ttf";
-const OUT: &str = "src/font_atlas.rs";
+const TTF: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/Cairopixel.ttf");
+const OUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/font_atlas.rs");
 // Wood palette lifted from assets/buttons/controls.png.
 const WOOD_CORE: u32 = 0xFF50_2205;   // v1 body
 const WOOD_WALL: u32 = 0xFF50_2205;   // top/left edge inside the mask

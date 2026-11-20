@@ -410,7 +410,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluyer-audio"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "fluyer-low"
+version = "0.1.0"
+dependencies = [
+ "fluyer-audio",
+ "fluyer-pxui",
+ "winit",
+]
+
+[[package]]
+name = "fluyer-pxui"
 version = "0.1.0"
 dependencies = [
  "cc",

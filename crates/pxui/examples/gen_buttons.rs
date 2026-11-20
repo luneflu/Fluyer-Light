@@ -8,8 +8,8 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::fmt::Write as _;
 
-const SRC: &str = "assets/buttons";
-const OUT: &str = "src/buttons.rs";
+const SRC: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/buttons");
+const OUT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/src/buttons.rs");
 
 struct Sprite {
     name: String,

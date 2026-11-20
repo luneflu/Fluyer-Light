@@ -1,5 +1,5 @@
 target
-src/font_atlas.rs
-src/buttons.rs
+crates/pxui/src/font_atlas.rs
+crates/pxui/src/buttons.rs
 **/.DS_Store
 **/._*

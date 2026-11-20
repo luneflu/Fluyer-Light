@@ -1,16 +1,18 @@
-// audio: miniaudio engine behind audio.c. Non-blocking; playback runs on its own thread.
+// macOS: CoreAudio/AudioToolbox behind audio.c. No worker thread; decode runs in the AU render callback.
 
 use std::ffi::{c_char, c_double, c_float, c_int, CString};
 
 extern "C" {
     fn au_init() -> c_int;
     fn au_play(path: *const c_char) -> c_int;
+    #[allow(dead_code)]
     fn au_stop();
     fn au_toggle() -> c_int;
     fn au_playing() -> c_int;
     fn au_pos() -> c_double;
     fn au_len() -> c_double;
     fn au_seek(seconds: c_double) -> c_int;
+    #[allow(dead_code)]
     fn au_set_volume(v: c_float);
     fn au_quit();
 }

@@ -27,6 +27,10 @@ impl Rect {
         Self { x, y, w, h }
     }
 
+    pub fn contains(self, x: i32, y: i32) -> bool {
+        x >= self.x && y >= self.y && x < self.x + self.w && y < self.y + self.h
+    }
+
     pub fn union(self, o: Rect) -> Rect {
         if self.w <= 0 || self.h <= 0 {
             return o;
