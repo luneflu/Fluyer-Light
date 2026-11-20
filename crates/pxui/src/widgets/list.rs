@@ -30,15 +30,6 @@ impl ListView {
         (self.area.h.max(0) / self.stride()) as usize
     }
 
-    /// First visible row for a cursor: derived, never stored.
-    pub fn scroll_for(&self, selected: Option<usize>) -> usize {
-        let vis = self.visible().max(1);
-        match selected {
-            Some(i) if i >= vis => i + 1 - vis,
-            _ => 0,
-        }
-    }
-
     pub fn inner_x(&self) -> i32 {
         self.area.x + self.pad_x
     }
@@ -72,8 +63,7 @@ impl ListView {
         Some(i)
     }
 
-    pub fn draw(&self, c: &mut Canvas, items: &[&str], selected: Option<usize>) {
-        let scroll = self.scroll_for(selected);
+    pub fn draw(&self, c: &mut Canvas, items: &[&str], selected: Option<usize>, scroll: usize) {
         for (i, label) in items.iter().enumerate().skip(scroll) {
             let r = self.row(i, scroll);
             if r.y >= self.area.y + self.area.h {

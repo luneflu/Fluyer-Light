@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use winit::application::ApplicationHandler;
 use winit::dpi::LogicalSize;
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{ElementState, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{Window, WindowId};
@@ -131,6 +131,16 @@ impl ApplicationHandler for Handler {
                 }
                 ElementState::Released => sh.dispatch(Event::MouseUp),
             },
+            WindowEvent::MouseWheel { delta, .. } => {
+                // Positive wheel = scroll up, so negate; keep px vs lines apart.
+                let (rows, pixels) = match delta {
+                    MouseScrollDelta::LineDelta(_, y) => (-(y as f64), false),
+                    MouseScrollDelta::PixelDelta(p) => (-p.y, true),
+                };
+                if rows != 0.0 {
+                    sh.dispatch(Event::Wheel { rows, pixels });
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed || event.repeat {
                     return;

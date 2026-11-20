@@ -6,6 +6,8 @@ use crate::core::player::Player;
 pub struct Model {
     pub tracks: Vec<String>,
     pub selected: Option<usize>, // list cursor
+    pub scroll: usize,           // first visible row
+    pub visible: usize,          // rows that fit; set from the layout on resize
     pub player: Player,
 }
 
@@ -14,7 +16,8 @@ pub struct Model {
 pub enum Action {
     Select(usize),
     Step(i32), // prev/next relative to the playing track
-    Move(i32), // move the list cursor only
+    Move(i32),     // move the list cursor only
+    Scroll(i32),   // wheel rows: positive scrolls down
     Toggle,    // play/pause
     Play,      // start the selected track
     Seek(f64), // 0..1
@@ -34,11 +37,36 @@ pub enum Changed {
 impl Model {
     pub fn new(tracks: Vec<String>) -> Self {
         let selected = if tracks.is_empty() { None } else { Some(0) };
-        Self { tracks, selected, player: Player::new() }
+        Self { tracks, selected, scroll: 0, visible: 1, player: Player::new() }
     }
 
     pub fn len(&self) -> usize {
         self.tracks.len()
+    }
+
+    /// How many rows fit right now. Clamps the scroll when the window changes.
+    pub fn set_visible(&mut self, visible: usize) {
+        self.visible = visible.max(1);
+        self.clamp_scroll();
+    }
+
+    pub fn max_scroll(&self) -> usize {
+        self.len().saturating_sub(self.visible)
+    }
+
+    fn clamp_scroll(&mut self) {
+        self.scroll = self.scroll.min(self.max_scroll());
+    }
+
+    /// Keep the cursor on screen after it moves.
+    fn reveal(&mut self) {
+        let Some(i) = self.selected else { return };
+        if i < self.scroll {
+            self.scroll = i;
+        } else if i >= self.scroll + self.visible {
+            self.scroll = i + 1 - self.visible;
+        }
+        self.clamp_scroll();
     }
 
     pub fn current_path(&self) -> Option<&String> {
@@ -55,9 +83,20 @@ impl Model {
             Action::Quit => Changed::Quit,
             Action::Move(d) => {
                 if self.move_cursor(d) {
+                    self.reveal();
                     Changed::Full
                 } else {
                     Changed::Nothing
+                }
+            }
+            Action::Scroll(d) => {
+                let before = self.scroll;
+                let next = self.scroll as i32 + d;
+                self.scroll = next.clamp(0, self.max_scroll() as i32) as usize;
+                if self.scroll == before {
+                    Changed::Nothing
+                } else {
+                    Changed::Full
                 }
             }
             Action::Step(d) => {

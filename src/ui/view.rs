@@ -37,8 +37,7 @@ pub fn hit(l: &Layout, list: &ListView, model: &Model, x: i32, y: i32) -> Option
     if l.seek.contains(x, y) {
         return Some(Hit::Seek(l.seek.frac_at(x)));
     }
-    let scroll = list.scroll_for(model.selected);
-    list.hit(x, y, model.len(), scroll).map(Hit::Row)
+    list.hit(x, y, model.len(), model.scroll).map(Hit::Row)
 }
 
 pub fn render(
@@ -52,7 +51,7 @@ pub fn render(
     c.clear(CANVAS_BACKGROUND);
 
     let labels: Vec<&str> = model.tracks.iter().map(|p| library::label(p)).collect();
-    list.draw(c, &labels, model.selected);
+    list.draw(c, &labels, model.selected, model.scroll);
 
     c.fill(Rect::new(0, l.h - BAR_HEIGHT, l.w, BAR_HEIGHT), BAR_BACKGROUND);
 

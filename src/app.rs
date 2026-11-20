@@ -34,6 +34,7 @@ pub struct App {
     layout: Layout,
     list: ListView,
     press: Press,
+    wheel_accum: f64, // fractional rows not yet scrolled
 }
 
 impl App {
@@ -46,6 +47,7 @@ impl App {
             layout: Layout::new(w, h, 0),
             list: list_view(w, h, 0),
             press: Press::None,
+            wheel_accum: 0.0,
         };
         if !app.model.player.init() {
             println!("audio: engine init failed");
@@ -67,6 +69,7 @@ impl App {
     fn layout(&mut self, w: i32, h: i32, inset: i32) {
         self.layout = Layout::new(w, h, inset);
         self.list = list_view(w, h, inset);
+        self.model.set_visible(self.list.visible());
     }
 
     pub fn handle(&mut self, ev: Event) -> Outcome {
@@ -80,6 +83,23 @@ impl App {
                 Key::Space => Action::Toggle,
                 _ => return Outcome::Idle,
             },
+            Event::Wheel { rows, pixels } => {
+                // Wheel notches are coarse; a trackpad sends pixels. Accumulate
+                // so one notch is a fraction of a row instead of a whole one.
+                const WHEEL_LINES_PER_ROW: f64 = 3.0;
+                let step = if pixels {
+                    rows / self.list.stride().max(1) as f64
+                } else {
+                    rows / WHEEL_LINES_PER_ROW
+                };
+                self.wheel_accum += step;
+                let whole = self.wheel_accum.trunc();
+                if whole == 0.0 {
+                    return Outcome::Idle;
+                }
+                self.wheel_accum -= whole;
+                Action::Scroll(whole as i32)
+            }
             Event::Tick => Action::Tick,
             Event::MouseDown { x, y } => match view::hit(&self.layout, &self.list, &self.model, x, y) {
                 Some(Hit::Transport(0)) => {

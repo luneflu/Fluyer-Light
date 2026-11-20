@@ -27,6 +27,9 @@ pub enum Event {
     Key { key: Key, mods: Mods },
     MouseDown { x: i32, y: i32 },
     MouseUp,
+    // Scroll amount, positive = down. `pixels` means the value is a pixel
+    // delta (trackpad) rather than wheel lines.
+    Wheel { rows: f64, pixels: bool },
     Tick, // main-run-loop timer; app decides whether it needs a repaint
 }
 
