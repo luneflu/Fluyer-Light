@@ -1,8 +1,8 @@
-// icons: transport frames from controls.png, one art px = ART device px.
+// icons: transport frames from controls.png, one art px = SPRITE_SCALE device px.
 
 use crate::buttons;
 use crate::gfx::{Canvas, Rect};
-use crate::theme::ART;
+use crate::theme::SPRITE_SCALE;
 
 // controls.png frames: 0 play, 1 play-down, 2 pause, 3 pause-down,
 // 4 next, 5 next-down, 6 prev, 7 prev-down.
@@ -19,6 +19,6 @@ pub fn draw(c: &mut Canvas, r: Rect, frame: usize) {
         buttons::CONTROLS_W,
         buttons::CONTROLS_H,
         (r.x, r.y),
-        (r.w / buttons::CONTROLS_W).max(ART),
+        (r.w / buttons::CONTROLS_W).max(SPRITE_SCALE),
     );
 }

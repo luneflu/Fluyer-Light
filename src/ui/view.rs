@@ -5,7 +5,9 @@ use crate::core::model::Model;
 use fluyer_pxui::font;
 use fluyer_pxui::gfx::{Canvas, Rect};
 use crate::ui::layout::Layout;
-use fluyer_pxui::theme::{BAR_BG, BG, FG, PAD, SCALE};
+use fluyer_pxui::theme::{
+    BAR_BACKGROUND, BAR_HEIGHT, BAR_PADDING, CANVAS_BACKGROUND, FOREGROUND, TEXT_SCALE,
+};
 use fluyer_pxui::widgets::icons::{self, F_NEXT, F_PAUSE, F_PLAY, F_PREV};
 use fluyer_pxui::widgets::list::ListView;
 
@@ -47,22 +49,26 @@ pub fn render(
     progress: (f64, f64),
     c: &mut Canvas,
 ) {
-    c.clear(BG);
+    c.clear(CANVAS_BACKGROUND);
 
     let labels: Vec<&str> = model.tracks.iter().map(|p| library::label(p)).collect();
     list.draw(c, &labels, model.selected);
 
-    c.fill(
-        Rect::new(0, l.h - fluyer_pxui::theme::BAR_H, l.w, fluyer_pxui::theme::BAR_H),
-        BAR_BG,
-    );
+    c.fill(Rect::new(0, l.h - BAR_HEIGHT, l.w, BAR_HEIGHT), BAR_BACKGROUND);
 
     // Track name, clipped to the room left of the buttons.
     if let Some(path) = model.current_path() {
         let room = l.name_room();
-        let name = fit(library::label(path), room, SCALE);
-        let ink = font::ink_bounds(&name, SCALE);
-        font::draw(c, &name, PAD, l.row_y + (l.icon - ink.h) / 2 - ink.y, SCALE, FG);
+        let name = fit(library::label(path), room, TEXT_SCALE);
+        let ink = font::ink_bounds(&name, TEXT_SCALE);
+        font::draw(
+            c,
+            &name,
+            BAR_PADDING,
+            l.row_y + (l.icon - ink.h) / 2 - ink.y,
+            TEXT_SCALE,
+            FOREGROUND,
+        );
     }
 
     let down = |hit: Press| (press == hit) as usize;
@@ -84,8 +90,8 @@ pub fn render_progress(l: &Layout, progress: (f64, f64), c: &mut Canvas) {
 }
 
 /// Longest prefix that fits `room` design px, ellipsised with "..".
-fn fit(text: &str, room: i32, scale: i32) -> String {
-    if font::text_width(text, scale) <= room {
+fn fit(text: &str, room: i32, text_scale: i32) -> String {
+    if font::text_width(text, text_scale) <= room {
         return text.to_string();
     }
     let mut out = String::new();
@@ -93,7 +99,7 @@ fn fit(text: &str, room: i32, scale: i32) -> String {
         let mut probe = out.clone();
         probe.push(ch);
         probe.push_str("..");
-        if font::text_width(&probe, scale) > room {
+        if font::text_width(&probe, text_scale) > room {
             break;
         }
         out.push(ch);

@@ -8,7 +8,7 @@ pub struct Button {
     pub x: i32, // top-left, design px
     pub y: i32,
     pub label: &'static str,
-    pub scale: i32, // text scale (font em x scale)
+    pub text_scale: i32, // font atlas px -> device px
     pub pad_x: i32,
     pub pad_y: i32,
     pub bg: Color,
@@ -25,7 +25,7 @@ impl Button {
         if self.fixed_w > 0 {
             return self.fixed_w;
         }
-        font::text_width(self.label, self.scale) + 2 * self.pad_x
+        font::text_width(self.label, self.text_scale) + 2 * self.pad_x
     }
 
     /// Line height + vertical padding.
@@ -33,7 +33,7 @@ impl Button {
         if self.fixed_h > 0 {
             return self.fixed_h;
         }
-        font::LINE_HEIGHT * self.scale + 2 * self.pad_y
+        font::LINE_HEIGHT * self.text_scale + 2 * self.pad_y
     }
 
     pub fn rect(&self) -> Rect {
@@ -64,9 +64,9 @@ impl Button {
         }
 
         // Centre by ink, not by line metrics (side bearings lie).
-        let ink = font::ink_bounds(self.label, self.scale);
+        let ink = font::ink_bounds(self.label, self.text_scale);
         let tx = r.x + (r.w - ink.w) / 2 - ink.x;
         let ty = r.y + (r.h - ink.h) / 2 - ink.y;
-        font::draw(c, self.label, tx, ty, self.scale, self.fg);
+        font::draw(c, self.label, tx, ty, self.text_scale, self.fg);
     }
 }

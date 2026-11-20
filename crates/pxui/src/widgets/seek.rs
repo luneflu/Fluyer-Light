@@ -1,7 +1,7 @@
 // seek: a track bar plus its progress fill.
 
 use crate::gfx::{Canvas, Rect};
-use crate::theme::{FG, TRACK_BG};
+use crate::theme::{FOREGROUND, SEEK_TRACK_BACKGROUND};
 
 #[derive(Clone, Copy)]
 pub struct SeekBar {
@@ -33,10 +33,10 @@ impl SeekBar {
         if self.rect.w <= 0 {
             return;
         }
-        c.fill(self.rect, TRACK_BG);
+        c.fill(self.rect, SEEK_TRACK_BACKGROUND);
         let wpx = self.progress_px(pos, len);
         if wpx > 0 {
-            c.fill(Rect::new(self.rect.x, self.rect.y, wpx, self.rect.h), FG);
+            c.fill(Rect::new(self.rect.x, self.rect.y, wpx, self.rect.h), FOREGROUND);
         }
         c.mark(self.rect);
     }
