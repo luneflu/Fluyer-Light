@@ -1,7 +1,31 @@
-// macOS pixel presenter only; audio builds in the `fluyer-audio` crate.
+// Bakers (bootstrap the gitignored src/*.rs when missing) + the macOS pixel
+// presenter. audio builds in the `fluyer-audio` crate.
+
+#[path = "gen/buttons.rs"]
+mod gen_buttons;
+#[path = "gen/font_atlas.rs"]
+mod gen_font_atlas;
+
+use std::path::Path;
 use std::process::Command;
 
+// Baked default; re-bake with `--example gen_font -- <size>`.
+const ATLAS_SIZE: f32 = 48.0;
+
+fn bake_if_missing() {
+    if !Path::new("src/buttons.rs").exists() {
+        gen_buttons::run();
+    }
+    if !Path::new("src/font_atlas.rs").exists() {
+        gen_font_atlas::run(ATLAS_SIZE);
+    }
+    println!("cargo:rerun-if-changed=../../assets/buttons");
+    println!("cargo:rerun-if-changed=../../assets/fonts");
+}
+
 fn main() {
+    bake_if_missing();
+
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         return; // Windows uses softbuffer; no C presenter.
     }

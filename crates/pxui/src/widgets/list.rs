@@ -14,7 +14,6 @@ pub struct ListView {
     pub pad_y: i32,
     pub gap: i32,
     pub scale: i32,     // text scale
-    pub art_scale: i32, // plank sprite scale
     pub fg: Color,
     pub sel_fg: Color,
 }
@@ -81,11 +80,11 @@ impl ListView {
             if r.y >= self.area.y + self.area.h {
                 break;
             }
-            art::draw_row_art(c, r, self.art_scale);
+            art::draw_row_art(c, r);
             if selected == Some(i) {
                 // no selected art yet: a hot left accent reads as focus
                 c.fill(
-                    Rect::new(r.x + 2 * self.art_scale, r.y, self.art_scale, r.h),
+                    Rect::new(r.x + 2 * self.scale, r.y, self.scale, r.h),
                     SEL_BAR,
                 );
             }

@@ -3,25 +3,21 @@
 use crate::buttons;
 use crate::gfx::{Canvas, Rect};
 
-/// Top/bottom art rows that stay fixed; the band between them repeats.
-pub const CAP_T: i32 = 8;
-pub const CAP_B: i32 = 8;
+/// Corner/edge band that stays fixed; the middle repeats.
+pub const CAP: i32 = buttons::MUSIC_ITEM_W / 3;
+pub const PLANK: i32 = 2;
 
 /// Draw the item plank into `r`, growing in both axes without stretching bevels.
-pub fn draw_row_art(c: &mut Canvas, r: Rect, scale: i32) {
-    let t = (buttons::MUSIC_ITEM_W * buttons::MUSIC_ITEM_H) as usize;
-    let art = &buttons::MUSIC_ITEM;
-    c.blit_9slice(
-        &art[0..t],
-        &art[t..2 * t],
-        &art[2 * t..3 * t],
+/// The sheet is one 72×72 plank at 1:1, so a row is 3×24 caps plus a repeating middle.
+pub fn draw_row_art(c: &mut Canvas, r: Rect) {
+    c.blit_9(
+        &buttons::MUSIC_ITEM,
         buttons::MUSIC_ITEM_W,
         buttons::MUSIC_ITEM_H,
-        CAP_T,
-        CAP_B,
+        CAP,
         (r.x, r.y),
         r.w,
         r.h,
-        scale,
+        PLANK,
     );
 }

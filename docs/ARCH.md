@@ -25,7 +25,7 @@ Rules, grep-checkable:
 ## Build / bake
 ```
 cargo build --release --offline
-cargo run -p fluyer-pxui --release --example gen_font -- 48 7   # atlas
+cargo run -p fluyer-pxui --release --example gen_font -- 48      # atlas
 cargo run -p fluyer-pxui --release --example gen_buttons        # sprites
 ```
 Bakers resolve `CARGO_MANIFEST_DIR/../../assets` and write into `crates/pxui/src/`.

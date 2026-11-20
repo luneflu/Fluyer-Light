@@ -181,43 +181,42 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    /// 3×3 slice from three tiles (left/mid/right caps) with fixed top/bottom bands.
-    /// Corners keep their art pixels, the middle band repeats, so the plank grows in
-    /// both axes without stretching its bevels.
+    /// 3×3 slice of one sprite: `cap` source px per corner/edge stay fixed, the
+    /// middle band repeats, so the plank grows in both axes without stretching bevels.
     #[allow(clippy::too_many_arguments)]
-    pub fn blit_9slice(
+    pub fn blit_9(
         &mut self,
-        left: &[u32],
-        mid: &[u32],
-        right: &[u32],
-        tw: i32,
-        th: i32,
-        cap_t: i32,
-        cap_b: i32,
+        src: &[u32],
+        sw: i32,
+        sh: i32,
+        cap: i32,
         at: (i32, i32),
         w: i32,
         h: i32,
         scale: i32,
     ) {
-        let scale = scale.max(1);
-        let cap_x = (tw * scale).min(w / 2);
+        let s = scale.max(1);
+        let cx = (cap * s).min(w / 2);
+        let cy = (cap * s).min(h / 2);
+        let mw = (sw - 2 * cap).max(1);
+        let mh = (sh - 2 * cap).max(1);
         for ys in 0..h {
-            let sy = if ys < cap_t * scale {
-                ys / scale
-            } else if ys >= h - cap_b * scale {
-                th - 1 - (h - 1 - ys) / scale
+            let sy = if ys < cy {
+                ys / s
+            } else if ys >= h - cy {
+                sh - 1 - (h - 1 - ys) / s
             } else {
-                cap_t // single flat interior row: repeating a band shows seams
+                cap + ((ys - cy) / s) % mh
             };
             for xs in 0..w {
-                let (tile, sx) = if xs < cap_x {
-                    (left, xs / scale)
-                } else if xs >= w - cap_x {
-                    (right, tw - 1 - (w - 1 - xs) / scale)
+                let sx = if xs < cx {
+                    xs / s
+                } else if xs >= w - cx {
+                    sw - 1 - (w - 1 - xs) / s
                 } else {
-                    (mid, (xs - cap_x) / scale % tw)
+                    cap + ((xs - cx) / s) % mw
                 };
-                let px = tile[(sy.clamp(0, th - 1) * tw + sx.clamp(0, tw - 1)) as usize];
+                let px = src[(sy.clamp(0, sh - 1) * sw + sx.clamp(0, sw - 1)) as usize];
                 if px == 0 {
                     continue;
                 }

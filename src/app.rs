@@ -7,7 +7,7 @@ use crate::input::{Event, Key};
 use fluyer_pxui::gfx::{Canvas, Rect};
 use crate::ui::layout::Layout;
 use fluyer_pxui::theme::{
-    ART, ITEM_FG, LIST_GAP, LIST_PAD_X, LIST_PAD_Y, SCALE,
+    ITEM_FG, LIST_GAP, LIST_PAD_X, LIST_PAD_Y, SCALE,
 };
 use crate::ui::view::{self, Hit, Press};
 use fluyer_pxui::widgets::list::ListView;
@@ -132,7 +132,6 @@ fn list_view(w: i32, h: i32, inset: i32) -> ListView {
         pad_y: LIST_PAD_Y,
         gap: LIST_GAP,
         scale: SCALE,
-        art_scale: ART,
         fg: ITEM_FG,
         sel_fg: ITEM_FG,
     }

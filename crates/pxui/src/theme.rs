@@ -13,7 +13,7 @@ pub const ITEM_FG: Color = rgb(0x50, 0x22, 0x05);
 /// Accent for the selected row: the light bevel colour of the item art.
 pub const SEL_BAR: Color = 0xFFE4_9C6F;
 
-pub const SCALE: i32 = 1; // text: em x scale
+pub const SCALE: i32 = 2; // text: em x scale
 pub const ART: i32 = 3; // sprites: 16 px art x 3
 pub const PAD: i32 = 8;
 
@@ -25,4 +25,4 @@ pub const BAR_H: i32 = PAD + SEEK_H + GAP + ICON + PAD;
 
 pub const LIST_PAD_X: i32 = 24;
 pub const LIST_PAD_Y: i32 = 12;
-pub const LIST_GAP: i32 = 0;
+pub const LIST_GAP: i32 = 24;

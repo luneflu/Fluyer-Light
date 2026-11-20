@@ -10,6 +10,8 @@ softbuffer = "0.4"
 
 [build-dependencies]
 cc = "1.4"
+ttf-parser = "0.25"
+png = "0.17"
 
 [dev-dependencies]
 ttf-parser = "0.25"
